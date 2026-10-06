@@ -1,0 +1,11 @@
+# Normaliza todo archivo de texto a LF en el repositorio y en disco
+* text=auto eol=lf
+
+# Excepciones: scripts propios de Windows necesitan CRLF
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+
+# Binarios: nunca convertir
+*.parquet binary
+*.pbix binary
+*.xlsx binary

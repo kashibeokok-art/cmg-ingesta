@@ -1,0 +1,41 @@
+
+
+# Credenciales y configuracion local
+.env
+credenciales.py
+
+# Datos
+Archivos/
+data/
+*.parquet
+*.csv
+*.xlsx
+*.mdb
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Logs
+logs/
+*.log
+
+# Power BI
+*.pbix
+
+# Variantes de .env
+
+.env.*
+!.env.example
+
+# Sistema operativo
+desktop.ini
+Thumbs.db
+
+# Documentos personales (datos de contacto y trayectoria: NO van a un repositorio público)
+CV*.pdf
+*.pdf
+docs/entrevista/

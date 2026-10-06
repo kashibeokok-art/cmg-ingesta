@@ -1,0 +1,871 @@
+<!-- Header -->
+<!DOCTYPE html>
+<html lang="es-ES">
+
+<style>
+  .custom-search-suggestions {
+    display: none;
+    position: absolute;
+    min-width: 200px;
+    background-color: #ffffff;
+    border: 1px solid #cccccc;
+    border-radius: 4px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    max-height: 400px;
+    overflow-y: auto;
+    z-index: 9999;
+    margin-top: 2px;
+    scrollbar-width: thin;
+    scrollbar-color: #888888 #f0f0f0;
+    top: 120px !important;
+    left: auto !important;
+  }
+
+  @media(max-width: 1266px) {
+    .custom-search-suggestions {
+      top: 90px !important;
+    }
+  }
+
+  .custom-search-suggestions.show {
+    display: block;
+  }
+
+  .custom-suggestion-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    color: #333333;
+    font-size: 14px;
+    line-height: 1.4;
+    background-color: #ffffff;
+    border-bottom: 1px solid #eeeeee;
+  }
+
+  .custom-suggestion-item:last-child {
+    border-bottom: none;
+  }
+
+  .custom-suggestion-item:hover,
+  .custom-suggestion-item.selected {
+    background-color: #f0f0f0;
+  }
+
+  .custom-search-suggestions::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .custom-search-suggestions::-webkit-scrollbar-track {
+    background: #f0f0f0;
+  }
+
+  .custom-search-suggestions::-webkit-scrollbar-thumb {
+    background: #888888;
+    border-radius: 4px;
+  }
+
+  .custom-search-suggestions::-webkit-scrollbar-thumb:hover {
+    background: #555555;
+  }
+</style>
+<!-- // Custom head css -->
+
+<style>
+  #botonEnviar {
+    color: #ffffff;
+    background-color: #3ca7ac;
+    -webkit-transform: translateZ(0px);
+    transform: translateZ(0px);
+    position: relative;
+    border: none;
+    padding: 15px 32px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    cursor: pointer;
+  }
+
+  #botonEnviarEEMV {
+    color: #ffffff;
+    background-color: #F04823;
+    -webkit-transform: translateZ(0px);
+    transform: translateZ(0px);
+    position: relative;
+    border: none;
+    padding: 15px 32px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    cursor: pointer;
+    font-weight: bold;
+
+    .fila {
+      background: lightblue;
+      margin: 10px 0;
+      padding: 20px;
+    }
+
+    .buscadore {
+      width: 100%;
+      background-color: #f4f4f4;
+      /* puedes cambiarlo al color que desees */
+      background: #363844;
+      padding: 15px 20px;
+      box-sizing: border-box;
+    }
+
+    .colo_back {
+      background: #363844;
+
+    }
+
+    .sectiones {
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+      padding: 1rem;
+      background: #f9f9f9;
+      border: 1px solid #ccc;
+      white-space: pre-wrap;
+      /* hace que el código se ajuste */
+      word-wrap: nowrap;
+      /* rompe líneas largas si es necesario */
+
+      background: #222;
+      color: #eee;
+      padding: 1rem;
+      border-radius: 8px;
+    }
+
+    .cen_cam {
+      position: fixed;
+      z-index: 40;
+      right: -1px;
+      top: 180px;
+    }
+  }
+
+  .ui-datepicker,
+  .ui-datepicker td,
+  .ui-datepicker th,
+  .ui-datepicker-title,
+  .ui-datepicker .ui-datepicker-header,
+  .ui-datepicker .ui-datepicker-buttonpane,
+  .ui-datepicker .ui-datepicker-title select {
+    color: black !important;
+  }
+
+  /* Botones del datepicker */
+  .ui-datepicker .ui-datepicker-buttonpane button {
+    color: black !important;
+  }
+
+  /* Botones del datepicker */
+  .ui-datepicker .ui-datepicker-buttonpane button {
+    color: black !important;
+  }
+
+  main {
+    overflow-x: hidden;
+    overflow-y: hidden;
+  }
+</style>
+
+
+<head>
+  <meta charset="UTF-8" />
+  
+  <meta name="description" content="Sitio Oficial de Coordinador Eléctrico Nacional" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-B802VK3L1W"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+
+    gtag('config', 'G-B802VK3L1W');
+  </script>
+
+  <!-- Google Tag Manager -->
+  <script>
+    (function(w, d, s, l, i) {
+      w[l] = w[l] || [];
+      w[l].push({
+        'gtm.start': new Date().getTime(),
+        event: 'gtm.js'
+      });
+      var f = d.getElementsByTagName(s)[0],
+        j = d.createElement(s),
+        dl = l != 'dataLayer' ? '&l=' + l : '';
+      j.async = true;
+      j.src =
+        'https://www.googletagmanager.com/gtm.js?id=' + i + dl;
+      f.parentNode.insertBefore(j, f);
+    })(window, document, 'script', 'dataLayer', 'GTM-WCXT3QD');
+  </script>
+  <!-- End Google Tag Manager -->
+
+
+  
+		<!-- All in One SEO 4.1.1.1 -->
+		<title>15 | Coordinador Eléctrico Nacional</title>
+		<link rel="canonical" href="https://www.coordinador.cl/mercados/documentos/costo-marginal-real/2026-costo-marginal-real/enero-2026-costo-marginal-real/15-enero-2026-costo-marginal-real/" />
+		<script type="application/ld+json" class="aioseo-schema">
+			{"@context":"https:\/\/schema.org","@graph":[{"@type":"WebSite","@id":"https:\/\/www.coordinador.cl\/#website","url":"https:\/\/www.coordinador.cl\/","name":"Coordinador El\u00e9ctrico Nacional","description":"Servimos a Chile con Energ\u00eda","publisher":{"@id":"https:\/\/www.coordinador.cl\/#organization"}},{"@type":"Organization","@id":"https:\/\/www.coordinador.cl\/#organization","name":"Coordinador El\u00e9ctrico Nacional","url":"https:\/\/www.coordinador.cl\/"},{"@type":"BreadcrumbList","@id":"https:\/\/www.coordinador.cl\/mercados\/documentos\/costo-marginal-real\/2026-costo-marginal-real\/enero-2026-costo-marginal-real\/15-enero-2026-costo-marginal-real\/#breadcrumblist","itemListElement":[{"@type":"ListItem","@id":"https:\/\/www.coordinador.cl\/#listItem","position":"1","item":{"@id":"https:\/\/www.coordinador.cl\/#item","name":"Home","description":"Servimos a Chile con Energ\u00eda","url":"https:\/\/www.coordinador.cl\/"},"nextItem":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/#listItem"},{"@type":"ListItem","@id":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/#listItem","position":"2","item":{"@id":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/#item","name":"Transferencias Econ\u00f3micas","url":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/"},"nextItem":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/#listItem","previousItem":"https:\/\/www.coordinador.cl\/#listItem"},{"@type":"ListItem","@id":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/#listItem","position":"3","item":{"@id":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/#item","name":"Costo Marginal Real (Nuevo)","url":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/"},"nextItem":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/2026-costo-marginal-real\/#listItem","previousItem":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/#listItem"},{"@type":"ListItem","@id":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/2026-costo-marginal-real\/#listItem","position":"4","item":{"@id":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/2026-costo-marginal-real\/#item","name":"2026","url":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/2026-costo-marginal-real\/"},"nextItem":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/2026-costo-marginal-real\/enero-2026-costo-marginal-real\/#listItem","previousItem":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/#listItem"},{"@type":"ListItem","@id":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/2026-costo-marginal-real\/enero-2026-costo-marginal-real\/#listItem","position":"5","item":{"@id":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/2026-costo-marginal-real\/enero-2026-costo-marginal-real\/#item","name":"Enero","url":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/2026-costo-marginal-real\/enero-2026-costo-marginal-real\/"},"nextItem":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/2026-costo-marginal-real\/enero-2026-costo-marginal-real\/15-enero-2026-costo-marginal-real\/#listItem","previousItem":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/2026-costo-marginal-real\/#listItem"},{"@type":"ListItem","@id":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/2026-costo-marginal-real\/enero-2026-costo-marginal-real\/15-enero-2026-costo-marginal-real\/#listItem","position":"6","item":{"@id":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/2026-costo-marginal-real\/enero-2026-costo-marginal-real\/15-enero-2026-costo-marginal-real\/#item","name":"15","url":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/2026-costo-marginal-real\/enero-2026-costo-marginal-real\/15-enero-2026-costo-marginal-real\/"},"previousItem":"https:\/\/www.coordinador.cl\/mercados\/documentos\/transferencias-economicas\/costo-marginal-real\/2026-costo-marginal-real\/enero-2026-costo-marginal-real\/#listItem"}]},{"@type":"CollectionPage","@id":"https:\/\/www.coordinador.cl\/mercados\/documentos\/costo-marginal-real\/2026-costo-marginal-real\/enero-2026-costo-marginal-real\/15-enero-2026-costo-marginal-real\/#collectionpage","url":"https:\/\/www.coordinador.cl\/mercados\/documentos\/costo-marginal-real\/2026-costo-marginal-real\/enero-2026-costo-marginal-real\/15-enero-2026-costo-marginal-real\/","name":"15 | Coordinador El\u00e9ctrico Nacional","inLanguage":"es-ES","isPartOf":{"@id":"https:\/\/www.coordinador.cl\/#website"},"breadcrumb":{"@id":"https:\/\/www.coordinador.cl\/mercados\/documentos\/costo-marginal-real\/2026-costo-marginal-real\/enero-2026-costo-marginal-real\/15-enero-2026-costo-marginal-real\/#breadcrumblist"}}]}
+		</script>
+		<!-- All in One SEO -->
+
+<link rel='dns-prefetch' href='//www.google.com' />
+<link rel='stylesheet' id='wp-block-library-css' href='https://www.coordinador.cl/wp-includes/css/dist/block-library/style.min.css?ver=6.4.1' type='text/css' media='all' />
+<style id='classic-theme-styles-inline-css' type='text/css'>
+/*! This file is auto-generated */
+.wp-block-button__link{color:#fff;background-color:#32373c;border-radius:9999px;box-shadow:none;text-decoration:none;padding:calc(.667em + 2px) calc(1.333em + 2px);font-size:1.125em}.wp-block-file__button{background:#32373c;color:#fff;text-decoration:none}
+</style>
+<style id='global-styles-inline-css' type='text/css'>
+body{--wp--preset--color--black: #000000;--wp--preset--color--cyan-bluish-gray: #abb8c3;--wp--preset--color--white: #ffffff;--wp--preset--color--pale-pink: #f78da7;--wp--preset--color--vivid-red: #cf2e2e;--wp--preset--color--luminous-vivid-orange: #ff6900;--wp--preset--color--luminous-vivid-amber: #fcb900;--wp--preset--color--light-green-cyan: #7bdcb5;--wp--preset--color--vivid-green-cyan: #00d084;--wp--preset--color--pale-cyan-blue: #8ed1fc;--wp--preset--color--vivid-cyan-blue: #0693e3;--wp--preset--color--vivid-purple: #9b51e0;--wp--preset--gradient--vivid-cyan-blue-to-vivid-purple: linear-gradient(135deg,rgba(6,147,227,1) 0%,rgb(155,81,224) 100%);--wp--preset--gradient--light-green-cyan-to-vivid-green-cyan: linear-gradient(135deg,rgb(122,220,180) 0%,rgb(0,208,130) 100%);--wp--preset--gradient--luminous-vivid-amber-to-luminous-vivid-orange: linear-gradient(135deg,rgba(252,185,0,1) 0%,rgba(255,105,0,1) 100%);--wp--preset--gradient--luminous-vivid-orange-to-vivid-red: linear-gradient(135deg,rgba(255,105,0,1) 0%,rgb(207,46,46) 100%);--wp--preset--gradient--very-light-gray-to-cyan-bluish-gray: linear-gradient(135deg,rgb(238,238,238) 0%,rgb(169,184,195) 100%);--wp--preset--gradient--cool-to-warm-spectrum: linear-gradient(135deg,rgb(74,234,220) 0%,rgb(151,120,209) 20%,rgb(207,42,186) 40%,rgb(238,44,130) 60%,rgb(251,105,98) 80%,rgb(254,248,76) 100%);--wp--preset--gradient--blush-light-purple: linear-gradient(135deg,rgb(255,206,236) 0%,rgb(152,150,240) 100%);--wp--preset--gradient--blush-bordeaux: linear-gradient(135deg,rgb(254,205,165) 0%,rgb(254,45,45) 50%,rgb(107,0,62) 100%);--wp--preset--gradient--luminous-dusk: linear-gradient(135deg,rgb(255,203,112) 0%,rgb(199,81,192) 50%,rgb(65,88,208) 100%);--wp--preset--gradient--pale-ocean: linear-gradient(135deg,rgb(255,245,203) 0%,rgb(182,227,212) 50%,rgb(51,167,181) 100%);--wp--preset--gradient--electric-grass: linear-gradient(135deg,rgb(202,248,128) 0%,rgb(113,206,126) 100%);--wp--preset--gradient--midnight: linear-gradient(135deg,rgb(2,3,129) 0%,rgb(40,116,252) 100%);--wp--preset--font-size--small: 13px;--wp--preset--font-size--medium: 20px;--wp--preset--font-size--large: 36px;--wp--preset--font-size--x-large: 42px;--wp--preset--spacing--20: 0.44rem;--wp--preset--spacing--30: 0.67rem;--wp--preset--spacing--40: 1rem;--wp--preset--spacing--50: 1.5rem;--wp--preset--spacing--60: 2.25rem;--wp--preset--spacing--70: 3.38rem;--wp--preset--spacing--80: 5.06rem;--wp--preset--shadow--natural: 6px 6px 9px rgba(0, 0, 0, 0.2);--wp--preset--shadow--deep: 12px 12px 50px rgba(0, 0, 0, 0.4);--wp--preset--shadow--sharp: 6px 6px 0px rgba(0, 0, 0, 0.2);--wp--preset--shadow--outlined: 6px 6px 0px -3px rgba(255, 255, 255, 1), 6px 6px rgba(0, 0, 0, 1);--wp--preset--shadow--crisp: 6px 6px 0px rgba(0, 0, 0, 1);}:where(.is-layout-flex){gap: 0.5em;}:where(.is-layout-grid){gap: 0.5em;}body .is-layout-flow > .alignleft{float: left;margin-inline-start: 0;margin-inline-end: 2em;}body .is-layout-flow > .alignright{float: right;margin-inline-start: 2em;margin-inline-end: 0;}body .is-layout-flow > .aligncenter{margin-left: auto !important;margin-right: auto !important;}body .is-layout-constrained > .alignleft{float: left;margin-inline-start: 0;margin-inline-end: 2em;}body .is-layout-constrained > .alignright{float: right;margin-inline-start: 2em;margin-inline-end: 0;}body .is-layout-constrained > .aligncenter{margin-left: auto !important;margin-right: auto !important;}body .is-layout-constrained > :where(:not(.alignleft):not(.alignright):not(.alignfull)){max-width: var(--wp--style--global--content-size);margin-left: auto !important;margin-right: auto !important;}body .is-layout-constrained > .alignwide{max-width: var(--wp--style--global--wide-size);}body .is-layout-flex{display: flex;}body .is-layout-flex{flex-wrap: wrap;align-items: center;}body .is-layout-flex > *{margin: 0;}body .is-layout-grid{display: grid;}body .is-layout-grid > *{margin: 0;}:where(.wp-block-columns.is-layout-flex){gap: 2em;}:where(.wp-block-columns.is-layout-grid){gap: 2em;}:where(.wp-block-post-template.is-layout-flex){gap: 1.25em;}:where(.wp-block-post-template.is-layout-grid){gap: 1.25em;}.has-black-color{color: var(--wp--preset--color--black) !important;}.has-cyan-bluish-gray-color{color: var(--wp--preset--color--cyan-bluish-gray) !important;}.has-white-color{color: var(--wp--preset--color--white) !important;}.has-pale-pink-color{color: var(--wp--preset--color--pale-pink) !important;}.has-vivid-red-color{color: var(--wp--preset--color--vivid-red) !important;}.has-luminous-vivid-orange-color{color: var(--wp--preset--color--luminous-vivid-orange) !important;}.has-luminous-vivid-amber-color{color: var(--wp--preset--color--luminous-vivid-amber) !important;}.has-light-green-cyan-color{color: var(--wp--preset--color--light-green-cyan) !important;}.has-vivid-green-cyan-color{color: var(--wp--preset--color--vivid-green-cyan) !important;}.has-pale-cyan-blue-color{color: var(--wp--preset--color--pale-cyan-blue) !important;}.has-vivid-cyan-blue-color{color: var(--wp--preset--color--vivid-cyan-blue) !important;}.has-vivid-purple-color{color: var(--wp--preset--color--vivid-purple) !important;}.has-black-background-color{background-color: var(--wp--preset--color--black) !important;}.has-cyan-bluish-gray-background-color{background-color: var(--wp--preset--color--cyan-bluish-gray) !important;}.has-white-background-color{background-color: var(--wp--preset--color--white) !important;}.has-pale-pink-background-color{background-color: var(--wp--preset--color--pale-pink) !important;}.has-vivid-red-background-color{background-color: var(--wp--preset--color--vivid-red) !important;}.has-luminous-vivid-orange-background-color{background-color: var(--wp--preset--color--luminous-vivid-orange) !important;}.has-luminous-vivid-amber-background-color{background-color: var(--wp--preset--color--luminous-vivid-amber) !important;}.has-light-green-cyan-background-color{background-color: var(--wp--preset--color--light-green-cyan) !important;}.has-vivid-green-cyan-background-color{background-color: var(--wp--preset--color--vivid-green-cyan) !important;}.has-pale-cyan-blue-background-color{background-color: var(--wp--preset--color--pale-cyan-blue) !important;}.has-vivid-cyan-blue-background-color{background-color: var(--wp--preset--color--vivid-cyan-blue) !important;}.has-vivid-purple-background-color{background-color: var(--wp--preset--color--vivid-purple) !important;}.has-black-border-color{border-color: var(--wp--preset--color--black) !important;}.has-cyan-bluish-gray-border-color{border-color: var(--wp--preset--color--cyan-bluish-gray) !important;}.has-white-border-color{border-color: var(--wp--preset--color--white) !important;}.has-pale-pink-border-color{border-color: var(--wp--preset--color--pale-pink) !important;}.has-vivid-red-border-color{border-color: var(--wp--preset--color--vivid-red) !important;}.has-luminous-vivid-orange-border-color{border-color: var(--wp--preset--color--luminous-vivid-orange) !important;}.has-luminous-vivid-amber-border-color{border-color: var(--wp--preset--color--luminous-vivid-amber) !important;}.has-light-green-cyan-border-color{border-color: var(--wp--preset--color--light-green-cyan) !important;}.has-vivid-green-cyan-border-color{border-color: var(--wp--preset--color--vivid-green-cyan) !important;}.has-pale-cyan-blue-border-color{border-color: var(--wp--preset--color--pale-cyan-blue) !important;}.has-vivid-cyan-blue-border-color{border-color: var(--wp--preset--color--vivid-cyan-blue) !important;}.has-vivid-purple-border-color{border-color: var(--wp--preset--color--vivid-purple) !important;}.has-vivid-cyan-blue-to-vivid-purple-gradient-background{background: var(--wp--preset--gradient--vivid-cyan-blue-to-vivid-purple) !important;}.has-light-green-cyan-to-vivid-green-cyan-gradient-background{background: var(--wp--preset--gradient--light-green-cyan-to-vivid-green-cyan) !important;}.has-luminous-vivid-amber-to-luminous-vivid-orange-gradient-background{background: var(--wp--preset--gradient--luminous-vivid-amber-to-luminous-vivid-orange) !important;}.has-luminous-vivid-orange-to-vivid-red-gradient-background{background: var(--wp--preset--gradient--luminous-vivid-orange-to-vivid-red) !important;}.has-very-light-gray-to-cyan-bluish-gray-gradient-background{background: var(--wp--preset--gradient--very-light-gray-to-cyan-bluish-gray) !important;}.has-cool-to-warm-spectrum-gradient-background{background: var(--wp--preset--gradient--cool-to-warm-spectrum) !important;}.has-blush-light-purple-gradient-background{background: var(--wp--preset--gradient--blush-light-purple) !important;}.has-blush-bordeaux-gradient-background{background: var(--wp--preset--gradient--blush-bordeaux) !important;}.has-luminous-dusk-gradient-background{background: var(--wp--preset--gradient--luminous-dusk) !important;}.has-pale-ocean-gradient-background{background: var(--wp--preset--gradient--pale-ocean) !important;}.has-electric-grass-gradient-background{background: var(--wp--preset--gradient--electric-grass) !important;}.has-midnight-gradient-background{background: var(--wp--preset--gradient--midnight) !important;}.has-small-font-size{font-size: var(--wp--preset--font-size--small) !important;}.has-medium-font-size{font-size: var(--wp--preset--font-size--medium) !important;}.has-large-font-size{font-size: var(--wp--preset--font-size--large) !important;}.has-x-large-font-size{font-size: var(--wp--preset--font-size--x-large) !important;}
+.wp-block-navigation a:where(:not(.wp-element-button)){color: inherit;}
+:where(.wp-block-post-template.is-layout-flex){gap: 1.25em;}:where(.wp-block-post-template.is-layout-grid){gap: 1.25em;}
+:where(.wp-block-columns.is-layout-flex){gap: 2em;}:where(.wp-block-columns.is-layout-grid){gap: 2em;}
+.wp-block-pullquote{font-size: 1.5em;line-height: 1.6;}
+</style>
+<link rel='stylesheet' id='contact-form-7-css' href='https://www.coordinador.cl/wp-content/plugins/contact-form-7/includes/css/styles.css?ver=5.5.5' type='text/css' media='all' />
+<link rel='stylesheet' id='cf7cf-style-css' href='https://www.coordinador.cl/wp-content/plugins/cf7-conditional-fields/style.css?ver=2.1.1' type='text/css' media='all' />
+<script type="text/javascript" src="https://www.coordinador.cl/wp-includes/js/jquery/jquery.min.js?ver=3.7.1" id="jquery-core-js"></script>
+<script type="text/javascript" src="https://www.coordinador.cl/wp-includes/js/jquery/jquery-migrate.min.js?ver=3.4.1" id="jquery-migrate-js"></script>
+<link rel="https://api.w.org/" href="https://www.coordinador.cl/wp-json/" />
+		<script>
+		(function(h,o,t,j,a,r){
+			h.hj=h.hj||function(){(h.hj.q=h.hj.q||[]).push(arguments)};
+			h._hjSettings={hjid:1934538,hjsv:5};
+			a=o.getElementsByTagName('head')[0];
+			r=o.createElement('script');r.async=1;
+			r.src=t+h._hjSettings.hjid+j+h._hjSettings.hjsv;
+			a.appendChild(r);
+		})(window,document,'//static.hotjar.com/c/hotjar-','.js?sv=');
+		</script>
+		  <script>
+    window.jq = jQuery.noConflict();
+  </script>
+  <script>
+    window.base_url = 'https://www.coordinador.cl';
+    window.template_url = 'https://www.coordinador.cl/wp-content/themes/coordinador-electrico';
+  </script>
+
+
+  
+  
+
+
+  <link rel="shortcut icon" href="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/img/images/shortcut-icons/favicon.ico">
+  <script src='https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/js/libs/jquery-v2.1.1.min.js'></script>
+  <script src='https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/js/libs/bootstrap.js'></script>
+
+
+  <script src="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/js/libs/waypoints.min.js"></script>
+  <script src="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/js/libs/countUp.js"></script>
+  <script src="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/js/underscore.js" type="text/javascript"></script>
+  <script>
+    window.__appUnderscore = window._;
+  </script>
+
+
+  <!-- Prueba graficos -->
+  <link rel="stylesheet" id="graficos-css" href="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/css/graficos.min.css?ver=4.7.3" type="text/css" media="all">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.css" type="text/css" media="all">
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap3.min.css" type="text/css" media="all">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" type="text/css" media="all">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/plugins/monthSelect/style.css" type="text/css" media="all">
+
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/es.js"></script>
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/plugins/monthSelect/index.js"></script>
+
+  <script type="text/javascript" src="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/amcharts/custom/fabric.min.js"></script>
+  <script type="text/javascript" src="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/amcharts/custom/FileSaver.min.js"></script>
+  <script type="text/javascript" src="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/amcharts/custom/jszip.min.js"></script>
+  <script type="text/javascript" src="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/amcharts/custom/pdfmake.min.js"></script>
+  <script type="text/javascript" src="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/amcharts/custom/xlsx.min.js"></script>
+  <script type="text/javascript" src="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/amcharts/custom/vfs_fonts.js"></script>
+
+  <!---->
+  <script src='https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/js/libs/jquery-ui.js'></script>
+  <script src='https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/js/libs/jquery.rcrumbs.js'></script>
+  <script src='https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/js/main.js?v=3.6'></script>
+  <script src='https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/js/temporal.js?v=2.0'></script>
+  <script src='https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/js/wpcf7.js'></script>
+  <script>
+    jq(function() {
+      jq('#pas-solicitante').keydown(function(e) {
+        if (e.shiftKey || e.ctrlKey || e.altKey) {
+          e.preventDefault();
+        } else {
+          var key = e.keyCode;
+          if (!((key == 8) || (key == 32) || (key == 46) || (key >= 48 && key <= 57) || (key >= 65 && key <= 90))) {
+            e.preventDefault();
+          }
+        }
+      });
+    });
+  </script>
+
+  <script>
+    jq(function() {
+      jq('#pas-representado').keydown(function(e) {
+        if (e.shiftKey || e.ctrlKey || e.altKey) {
+          e.preventDefault();
+        } else {
+          var key = e.keyCode;
+          if (!((key == 8) || (key == 32) || (key == 46) || (key >= 48 && key <= 57) || (key >= 65 && key <= 90))) {
+            e.preventDefault();
+          }
+        }
+      });
+    });
+  </script>
+  <!-- css -->
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;900&display=swap" media="all" />
+
+
+  <link rel="stylesheet" type="text/css" media="all" href="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/css/jquery-ui.min.css" />
+  <link rel="stylesheet" type="text/css" media="all" href="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/css/jquery-ui.theme.css" />
+  <link rel="stylesheet" type="text/css" media="all" href="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/css/main.css?v=1.0" />
+  <link rel="stylesheet" type="text/css" media="all" href="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/css/newcss.css" />
+  <link rel="stylesheet" type="text/css" media="all" href="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/css/header.css" />
+  <link rel="stylesheet" type="text/css" media="all" href="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/css/bootstrap.v3.3.7.min.css" />
+  <!-- <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css"> -->
+  <link rel="stylesheet" type="text/css" media="all" href="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/css/cen_breadcrumb.css" />
+  
+
+
+  <!-- Script adicional -->
+    <script> jq(document).ready(function () { jq(document).on("click", 'a[href$="https://www2.coordinador.cl/agenda-publica/"]:not(.btn-continuar-agenda)', function (e) { e.preventDefault(); jq("#aviso-agenda-publica").modal("show"); }); }); </script>
+  <!-- Estilos adicionales -->
+          <script>        var jav_iWebAncho=screen.width;        document.cookie = "jav_iWebAncho="+jav_iWebAncho;    </script>
+</head>
+
+<body >
+
+  <div id="aviso-agenda-publica" class="modal fade">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <button type="button" class="close close-modal-agenda-publica" aria-hidden="true" onclick="window.location.href='https://www.coordinador.cl/agenda-publica/';">&times;</button>
+        <div class="modal-body">
+          <div class="row form-fields">
+            <div class="col-md-10 col-md-offset-1">
+              <h5 class="modal-title margin-top-2 margin-bottom-2">Debido a la contingencia provocada por la pandemia de COVID-19 (Coronavirus), las audiencias o reuniones solicitadas vía agenda pública se postergarán hasta nuevo aviso. Sin perjucio de lo anterior, en caso de presentarse alguna situación calificada como urgente, dicha reunión podrá realizarse vía telefónica o video conferencia.</h5>
+              <a href="https://www.coordinador.cl/agenda-publica/" class="cen_btn cen_btn-primary margin-top-1 btn-continuar-agenda">Continuar</a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- /.modal-content -->
+    </div>
+    <!-- /.modal-dialog -->
+  </div>
+
+  <global-header id="headerCEN"></global-header>
+
+  <!-- breadcrums -->
+    <!-- fin breadcrums -->
+
+  <!-- Cargar el script del Web Component -->
+  <script src="https://www.coordinador.cl/cdn/main.js" async defer></script>
+
+  <!-- Configurar el header -->
+  <script>
+    // Función para cargar la configuración una sola vez
+    async function loadConfiguration() {
+      try {
+        // Cargar configuración desde el JSON (con timestamp para evitar caché)
+        const timestamp = new Date().getTime();
+        // Nota: Ajusta la ruta a 'assets' o 'header/assets' según tu despliegue
+        const response = await fetch(`https://www.coordinador.cl/cdn/assets/menu-config.json?t=${timestamp}`);
+        return await response.json();
+      } catch (error) {
+        console.error('Error al cargar la configuración:', error);
+        // Fallback si falla la carga del JSON
+        return {
+          brand: {
+            name: "Coordinador Eléctrico Nacional",
+            logoUrl: "https://www.coordinador.cl/cdn/assets/iso.png",
+            homeUrl: "/"
+          },
+          mainMenu: [],
+          utilityLinks: [],
+          userActions: [],
+          search: {
+            active: false,
+            placeholder: "Buscar...",
+            action: "/buscar",
+            tags: []
+          },
+          footer: {}
+        };
+      }
+    }
+
+    window.__cenMenuConfigPromise = window.__cenMenuConfigPromise || loadConfiguration();
+
+    customElements.whenDefined('global-header').then(async () => {
+      const config = await window.__cenMenuConfigPromise;
+      const header = document.getElementById('headerCEN');
+      if (header) {
+        header.config = config;
+      }
+    });
+  </script>
+    <script>        var jav_iWebAncho=screen.width;        document.cookie = "jav_iWebAncho="+jav_iWebAncho;    </script><!-- Portales-documentos -->
+<!-- breadcrums -->
+<div class="container" style="width: auto !important;">
+    <div class="cen_rcrumbs" id="breadcrumbs">
+        <ul class="cen_breadcrums">
+            <li class="show">
+                <a href="https://www.coordinador.cl" title="Home"><i class="icon-home"></i></a> <span class="divider">&gt;</span>
+            </li>
+
+            <li class="show">
+                <span class="sistemaelectrico-texto-breadcrumbs">Informes y estudios &gt; Mercado</span>
+            </li>
+
+        </ul>
+    </div>
+</div>
+<!-- fin breadcrums -->
+
+<section class="cen_inner">
+    <div class="container" style="width: auto !important;">
+        <!--<div class="cen_text__center margin-bottom-3 cen_title">-->
+        <!-- INICIO :: Titulo y Subttitulo -->
+        <div class="cen_text__center margin-bottom-3">
+            <!--<span style="font-weight: bold;font-family: 'open_sansregular';font-size: 52px;color: #252730;">Mercados</span>-->
+            <span class="sistemaelectrico-titulo-pagina">Mercados</span>
+        </div>
+                <div class="row">
+            <div class="col-md-11">    <div class="sistemaelectrico-div-detalle-titulo-pagina">        <span class="sistemaelectrico-detalle-titulo-pagina"><p style="text-align: center;">En esta sección se presenta la documentación de las Transferencias Económicas entre las empresas eléctricas participantes del Sistema Eléctrico Nacional, destacando temas como indicadores económicos del mercado eléctrico, como así mismo el seguimiento de la cadena de pagos, potencia de suficiencia, AVI y COMA de instalaciones, entre otros.</p>
+</span>     </div></div>        </div>
+        <!-- FIN :: Titulo y Subttitulo -->
+
+
+        <!-- INICIO :: Buscador -->
+        <!--div class="row">
+            <div class="col-md-3"> </div>
+            <div class="col-md-6">
+                <div class="row">
+                    <div class="col">
+                        <div class="cen_search-int">
+                            <form action="https://www.coordinador.cl/resultado-busqueda-new/" method="get">
+                                <input type="text" name="kendra_search_query" placeholder="¿Qué estás buscando?" value="" autocomplete="off"  onpaste="return false" class="sistemaelectrico-buscador-input">                                <input type="hidden" name="area" value="documentos">
+                                <input type="hidden" name="categoria_doc" value="mercados--servicios-complementarios">
+                                <a href="https://www.coordinador.cl/busqueda/" class="icon-search form-submit sistemaelectrico-buscador-a" title="Buscar"></a>
+                            </form>
+                            <div class="cen_text__center">
+                                <br>
+                                <strong class="sistemaelectrico-buscador-descripcion">Para tener una mejor experiencia sugerimos utilizar palabras claves </strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3"> </div>                
+        </div-->
+        <br><br>
+
+        <!-- FIN :: Buscador -->
+
+        <!-- INICIO :: Primer Cuerpo :: -->
+        <div class="row">
+            <!-- INICIO :: SubMenu -->
+            <!--
+            <div class="col-sm-4 margin-bottom-2" style="">
+                <ul class="cen_menu-nav cen_portales_menu-nav">
+            -->
+            <div class="col-md-3 justify-content-md-center">
+                <div class="row margin-top-4 cen_counter-list">
+                    <ul class="cen_menu-nav-nico cen_portales_menu-nav">
+                          <li>                                    <a href="https://www.coordinador.cl/mercados/documentos/intercambios-internacionales"  data-first-level-no="intercambios-internacionales" >Intercambios Internacionales <i class="icon-flecha  "></i></a>
+                                                                            <ul class="cen_menu-nav__sub-menu ">
+                                              </ul>  </li>  <li>                                        <a href="https://www.coordinador.cl/mercados/documentos/procedimiento-reemplazo-en-la-calidad-de-coordinado"  >Procedimiento Reemplazo de la calidad de Coordinado</a>
+                              </li>  <li>                                    <a href="https://www.coordinador.cl/mercados/documentos/costos-variables-de-generacion-y-stock-de-combustible"  data-first-level-no="costos-variables-de-generacion-y-stock-de-combustible" >Costos variables de generación y Stock de combustible <i class="icon-flecha  "></i></a>
+                                                                            <ul class="cen_menu-nav__sub-menu ">
+                                              </ul>  </li>  <li>                                    <a href="https://www.coordinador.cl/mercados/documentos/pronostico-centralizado-de-generacion-y-demanda-2"  data-first-level-no="pronostico-centralizado-de-generacion-y-demanda-2" >Pronósticos <i class="icon-flecha  "></i></a>
+                                                                            <ul class="cen_menu-nav__sub-menu ">
+                                              </ul>  </li>  <li>                                    <a href="https://www.coordinador.cl/mercados/documentos/indices-de-desempeno"  data-first-level-no="indices-de-desempeno" >Índices de desempeño <i class="icon-flecha  "></i></a>
+                                                                            <ul class="cen_menu-nav__sub-menu ">
+                                              </ul>  </li>  <li>                                    <a href="https://www.coordinador.cl/mercados/documentos/transferencias-economicas-de-empresas-distribuidoras"  data-first-level-no="transferencias-economicas-de-empresas-distribuidoras" >Transferencias Económicas de Empresas Distribuidoras <i class="icon-flecha  "></i></a>
+                                                                            <ul class="cen_menu-nav__sub-menu ">
+                                              </ul>  </li>  <li>                                    <a href="https://www.coordinador.cl/mercados/documentos/transferencias-economicas"  data-first-level-no="transferencias-economicas" >Transferencias Económicas <i class="icon-flecha  "></i></a>
+                                                                            <ul class="cen_menu-nav__sub-menu ">
+                                              </ul>  </li>  <li>                                    <a href="https://www.coordinador.cl/mercados/documentos/balance-ernc"  data-first-level-no="balance-ernc" >Balance ERNC <i class="icon-flecha  "></i></a>
+                                                                            <ul class="cen_menu-nav__sub-menu ">
+                                              </ul>  </li>  <li>                                    <a href="https://www.coordinador.cl/mercados/documentos/pagos-de-transmision"  data-first-level-no="pagos-de-transmision" >Pagos de Transmisión <i class="icon-flecha  "></i></a>
+                                                                            <ul class="cen_menu-nav__sub-menu ">
+                                              </ul>  </li>  <li>                                    <a href="https://www.coordinador.cl/mercados/documentos/contratos-de-suministro"  data-first-level-no="contratos-de-suministro" >Contratos de Suministro <i class="icon-flecha  "></i></a>
+                                                                            <ul class="cen_menu-nav__sub-menu ">
+                                              </ul>  </li>  <li>                                    <a href="https://www.coordinador.cl/mercados/documentos/impuesto-a-emisiones"  data-first-level-no="impuesto-a-emisiones" >Impuesto a Emisiones <i class="icon-flecha  "></i></a>
+                                                                            <ul class="cen_menu-nav__sub-menu ">
+                                              </ul>  </li>  <li>                                    <a href="https://www.coordinador.cl/mercados/documentos/potencia-de-suficiencia"  data-first-level-no="potencia-de-suficiencia" >Potencia de Suficiencia <i class="icon-flecha  "></i></a>
+                                                                            <ul class="cen_menu-nav__sub-menu ">
+                                              </ul>  </li>  <li>                                    <a href="https://www.coordinador.cl/mercados/documentos/seguimiento-de-la-cadena-de-pago"  data-first-level-no="seguimiento-de-la-cadena-de-pago" >Seguimiento de la Cadena de Pago <i class="icon-flecha  "></i></a>
+                                                                            <ul class="cen_menu-nav__sub-menu ">
+                                              </ul>  </li>  <li>                                    <a href="https://www.coordinador.cl/mercados/documentos/servicios-complementarios"  data-first-level-no="servicios-complementarios" >Servicios Complementarios <i class="icon-flecha  "></i></a>
+                                                                            <ul class="cen_menu-nav__sub-menu ">
+                                              </ul>  </li>  <li>                                    <a href="https://www.coordinador.cl/mercados/documentos/garantias"  data-first-level-no="garantias" >Garantías <i class="icon-flecha  "></i></a>
+                                                                            <ul class="cen_menu-nav__sub-menu ">
+                                              </ul>  </li>                                        </ul>
+                </div>
+            </div>
+            <!-- FIN :: SubMenu -->
+
+            <!-- INICIO :: Detalle o Cuerpo :: SubMenu -->
+            <!-- especial : 564 -->        <!-- INICIO :: TODOS categoría -->
+        <!-- INICIO :: New TODOS categoría -->
+
+        <div class="col-md-9">
+            <div class="row">
+                <div class="col-md-1">&nbsp;</div>
+                <div class="col-md-11">
+                    <br><br>
+                    <div>
+                        <span class="documentos-subtitulo">15</span><br>
+                                            </div>
+                    <div class="col-md-12">&nbsp;</div>
+                    <br>
+                    <br>
+                    <!--primera parte 1477-->                            <div style="border-top: 1px solid #E3E3E3;margin-right: 0px;">
+                                <div style="padding-left: 25px;"><br>                                 <!-- jnsilvani -->
+                                <span class="informes-estudio-Titulo" title="Antecedentes Costo Marginal Real Definitivo" style="margin-left: 00px;">Antecedentes Costo Marginal Real Definitivo</span></div><div style="margin-left: 26px;">        <span class="documentos-Publicar-Fecha" style="margin-left: 00px;"></span></div><span class="documentos-Publicar-Fecha">Fecha de publicación: 22/01/2026</span><br>                                    <a href="https://www.coordinador.cl/wp-content/uploads/2026/01/Antecedentes_CMG_Real_def_260115.zip" class="cen_btn cen_btn-primary" style="background-color: #006B99;font-family: 'open_sansregular';font-style: normal;font-weight: 700;font-size: 14px;line-height: 14px;text-align: center;color: #FFFFFF;border-radius: 5px;right: -25px;">Descargar ZIP&nbsp;</a>
+
+                                <br><br></div>                                <!-- jnsilvani -->
+
+                                                        <div style="border-top: 1px solid #E3E3E3;margin-right: 0px;">
+                                <div style="padding-left: 25px;"><br>                                 <!-- jnsilvani -->
+                                <span class="informes-estudio-Titulo" title="Antecedentes Costo Marginal Real Preliminar" style="margin-left: 00px;">Antecedentes Costo Marginal Real Preliminar</span></div><div style="margin-left: 26px;">        <span class="documentos-Publicar-Fecha" style="margin-left: 00px;"></span></div><span class="documentos-Publicar-Fecha">Fecha de publicación: 16/01/2026</span><br>                                    <a href="https://www.coordinador.cl/wp-content/uploads/2026/01/Antecedentes_CMG_Real_pre_260115.zip" class="cen_btn cen_btn-primary" style="background-color: #006B99;font-family: 'open_sansregular';font-style: normal;font-weight: 700;font-size: 14px;line-height: 14px;text-align: center;color: #FFFFFF;border-radius: 5px;right: -25px;">Descargar ZIP&nbsp;</a>
+
+                                <br><br></div>                                <!-- jnsilvani -->
+
+                            
+                        <!--documentos destacados -->
+
+                        
+                                                                        
+                        
+                            </div>
+                </div>
+            </div>
+            <!-- FIN :: New TODOS categoría -->
+            <!-- lo que sigue lo comento por parte -->
+
+
+            <!---- Cambio solicitado por Patricio Santis para que vista de descarga de documentopara en estas 2 categorias vuelva al formato estandar--------->
+            <!---- 10-09-2020 numero de ticket 2501 --------->
+                <!--?php }elseif($term_current_id==1046){?>---->
+        <!--?php include('includes/reporte_energetico.php');?>---->
+        <!--?php }elseif($term_current_id==1078){?>---->
+        <!-- ?php include('includes/panel_control.php');?>---->
+
+    <!-- FIN :: Detalle o Cuerpo :: SubMenu -->
+        </div>
+        <!-- FIN :: Primer Cuerpo :: -->
+
+        <!-- INICIO :: Segundo Detalle :: -->
+                <br>        <br>        <br>        <div class="bg-tertiary" style="background-color: transparent; line-height: 300%;">          <span class="documentos-detalle-titulo">&nbsp;Otros accesos directos del</span>          <span class="documentos-detalle-titulo" style="border-left: none;padding-left: 16px;">Coordinador</span>        </div>        <br>        <div class="row margin-top-1"><div class="col-md-4 col-sm-6">  <div class="cen_box-noticias cen_reportes" style="height: 583px;" >    <div class="cen_img">      <img src="https://www.coordinador.cl/wp-content/uploads/2018/08/desarrollo.jpg" alt="Planificación y Desarrollo" class="cen_elastic-img" style="border-radius: 4px 4px 0 0;">    </div>    <div class="cen_descript-text cen_box-int" style="border-radius: 0 0 4px 4px;">      <span class="documentos-detalle-subtitulo">Planificación y Desarrollo</span><br>      <div style="min-height: 133px;">        <span class="documentos-detalle-detalle">En esta sección el Coordinador, deja a su disposición informes y estudios relativos al desarrollo y nuevos negocios del Sistema Eléctrico Nacional.</span><br>      </div>      <div style="text-align: right;">        <a href="https://www.coordinador.cl/desarrollo/documentos/" class="cen_btn cen_btn-primary" style="background-color: #006B99;font-family: 'open_sansregular';font-style: normal;font-weight: 700;font-size: 14px;line-height: 19px;text-align: center;color: #FFFFFF;border-radius: 5px;">Ver Informes</a>      </div>    </div>  </div></div><div class="col-md-4 col-sm-6">  <div class="cen_box-noticias cen_reportes" style="height: 583px;" >    <div class="cen_img">      <img src="https://www.coordinador.cl/wp-content/uploads/2018/08/operacion.jpg" alt="Operación" class="cen_elastic-img" style="border-radius: 4px 4px 0 0;">    </div>    <div class="cen_descript-text cen_box-int" style="border-radius: 0 0 4px 4px;">      <span class="documentos-detalle-subtitulo">Operación</span><br>      <div style="min-height: 133px;">        <span class="documentos-detalle-detalle">En esta sección el Coordinador, deja a su disposición informes y estudios relativos a los distintos tópicos relacionados con la operación del Sistema Eléctrico Nacional.</span><br>      </div>      <div style="text-align: right;">        <a href="https://www.coordinador.cl/operacion/documentos/" class="cen_btn cen_btn-primary" style="background-color: #006B99;font-family: 'open_sansregular';font-style: normal;font-weight: 700;font-size: 14px;line-height: 19px;text-align: center;color: #FFFFFF;border-radius: 5px;">Ver Informes</a>      </div>    </div>  </div></div><div class="col-md-4 col-sm-6">  <div class="cen_box-noticias cen_reportes" style="height: 583px;" >    <div class="cen_img">      <img src="https://www.coordinador.cl/wp-content/uploads/2019/09/PAZ_9094.jpg" alt="Otros Reportes y Estadísticas" class="cen_elastic-img" style="border-radius: 4px 4px 0 0;">    </div>    <div class="cen_descript-text cen_box-int" style="border-radius: 0 0 4px 4px;">      <span class="documentos-detalle-subtitulo">Otros Reportes y Estadísticas</span><br>      <div style="min-height: 133px;">        <span class="documentos-detalle-detalle">En esta sección el Coordinador, deja a su disposición Reportes y Estadísticas relativas distintos tópicos del Sistema Eléctrico Nacional, entre ellos Planificación y Desarrollo, Operación, Mercados, entre otros.</span><br>      </div>      <div style="text-align: right;">        <a href="https://www.coordinador.cl/reportes-y-estadisticas/documentos" class="cen_btn cen_btn-primary" style="background-color: #006B99;font-family: 'open_sansregular';font-style: normal;font-weight: 700;font-size: 14px;line-height: 19px;text-align: center;color: #FFFFFF;border-radius: 5px;">Ver Informes</a>      </div>    </div>  </div></div>        </div>        <!-- FIN :: Segundo Detalle :: -->
+
+    </div>
+    
+</section>
+</main>
+<script type="text/javascript">
+    //   $(document).ready(function() {
+    //   //   // $('#datepickerBig').datepicker();
+    //   //   // $('#datepickerBig').datepicker("setDate", new Date(2008,9,03) );
+    //   //   // $('#datepickerBig').datepicker({setDate: '' });
+    //   //   // $(".datepickerBig .ui-datepicker-current-day").trigger("click");
+    //   $('#datepickerBig').datepicker({ defaultDate: new Date(2019,8,23) });
+    // });
+
+
+    let readMore_btn = document.getElementById('readMore_btn');
+    let hideText = document.getElementById('hideText');
+
+    if (readMore_btn && hideText) {
+        readMore_btn.addEventListener('click', toggleText);
+    }
+
+    function toggleText() {
+        hideText.classList.toggle('showText');
+
+        if (hideText.classList.contains('showText')) {
+            readMore_btn.innerHTML = 'Ver menos'
+        } else {
+            readMore_btn.innerHTML = 'Ver más'
+        }
+    }
+
+    function check_val_fecha() {
+        let vFecIni = document.getElementById("fecha-val-inicio").value;
+        let vFecFin = document.getElementById("fecha-val-termino").value;
+        const form = document.getElementById("form-fecha-valida");
+        // en dondeform-fecha-valida es el ID que se le dio linea 1103 aprox :: <form action="" method ="post" id="form-fecha-valida">
+        // nombre ID fecha-val-inicio del input
+        // nombre ID fecha-val-termino del input
+        var date_1 = new Date(vFecIni);
+        var date_2 = new Date(vFecFin);
+        var day_as_milliseconds = 86400000;
+        var diff_in_millisenconds = date_2 - date_1;
+        var diff_in_days = diff_in_millisenconds / day_as_milliseconds;
+        //alert( "diff_in_days="+diff_in_days);
+        if (diff_in_days > 0 && diff_in_days < 31) {
+            //alert( "Si" );
+            //return true;
+            jq('.msj-error-energia').addClass('cen_hidden'); // muestra msn
+            form.submit();
+        } else {
+            //alert( "No" );
+            jq('.msj-error-energia').html('Rango de fechas a analizar excede los 30 días. El rango ingresado está en ' + diff_in_days + ' días.'); //cambio mensaje
+            jq('.msj-error-energia').removeClass('cen_hidden'); // muestra msn
+            return false;
+        }
+        return;
+        //if( document.getElementById("fecha-val-inicio").value > document.getElementById("fecha-val-termino").value ){
+        //    alert("La fecha de inicio es menor que la final.");
+        //}
+    }
+</script>
+
+
+<!--footer-->
+
+
+<global-footer id="footerCEN"></global-footer>
+
+<script>
+(function () {
+  async function loadConfigurationFallback() {
+    try {
+      const timestamp = new Date().getTime();
+      const response = await fetch(`https://www.coordinador.cl/cdn/assets/menu-config.json?t=${timestamp}`);
+      return await response.json();
+    } catch (error) {
+      console.error('Error al cargar la configuración del footer:', error);
+      return {
+        brand: {
+          name: "Coordinador Eléctrico Nacional",
+          logoUrl: "https://www.coordinador.cl/cdn/assets/iso.png",
+          homeUrl: "/"
+        },
+        footer: {}
+      };
+    }
+  }
+
+  const configPromise = window.__cenMenuConfigPromise || (window.__cenMenuConfigPromise = loadConfigurationFallback());
+
+  customElements.whenDefined('global-footer').then(async () => {
+    const config = await configPromise;
+    const footer = document.getElementById('footerCEN');
+
+    if (footer) {
+      footer.config = {
+        brand: config.brand,
+        ...(config.footer || {})
+      };
+    }
+  });
+})();
+</script>
+
+
+<script type="text/javascript">/*  */
+var cen = {
+  "url":"https:\/\/www.coordinador.cl",
+  "ajax_url":"https:\/\/www.coordinador.cl\/wp-admin\/admin-ajax.php",
+  "theme_url":"https:\/\/www.coordinador.cl\/wp-content\/themes\/cen",
+  "api_url":"https:\/\/www.coordinador.cl\/wp-json\/"
+};
+var api = {
+  "graficos":"https://sipubv1.api.coordinador.cl/api/v1/"
+};
+var calendarJson = [""]; /*  */
+</script>
+
+<script src="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/amcharts/amcharts.js" type="text/javascript"></script>
+<!-- <script src="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/amcharts/charts_actual.js" type="text/javascript"></script> -->
+ <script src="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/amcharts/serial.js" type="text/javascript"></script>
+<script src="https://www.coordinador.cl/wp-content/themes/coordinador-electrico/assets/amcharts/charts_sin_jquery.js" type="text/javascript"></script>
+<script type="text/javascript">/*  */
+var GraficosConfig = {
+  "api_url":"https://sipubv1.api.coordinador.cl/api/v1/",
+  "api_url_nuevo":"https://sipubv1.api.coordinador.cl/api/v1/",
+  "json_url":"https://www.coordinador.cl/wp-content/plugins/graficos/json/",
+  "user_key_sipub":"f3cdad2758436a0a2c2c1fec92853de7"
+}; /*  */
+</script>
+
+  <!-- modal -->
+
+  <div id="modal-video" class="modal fade">
+    <div class="modal-dialog">
+      <div class="modal-content modal-content_extend">
+        <div class="modal-body">
+          <div class="cen_video">
+            <iframe frameborder="0" class="cen_video-modal" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="centro-ayuda" class="modal fade">
+    <div class="modal-dialog">
+      <div class="modal-content modal-content_extend">
+        <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+        <div class="cen_box">
+          <div class="modal-header cen_border-none margin-n-bottom-3">
+            <h5 class="modal-title">Centro de Ayuda</h5>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div class="cen_cont-box-flex margin-bottom-2 bg-secondary cen_box">
+            <a href="/atencion-y-contacto" class="cen_box-ayuda">
+              <i class="icon-atencion icon_l"></i>
+              <span>Atención & Contacto</span>
+            </a>
+            <a href="/transparencia" class="cen_box-ayuda">
+              <i class="icon-transparencia icon_l margin-left-1"></i>
+              <span>Transparencia</span>
+            </a>
+            <a href="/informes-y-estudios" class="cen_box-ayuda">
+              <i class="icon-informes icon_l"></i>
+              <span>Informes y Estudios</span>
+            </a>
+            <a href="https://www.coordinador.cl/agenda-publica/" target="_blank" class="cen_box-ayuda">
+              <i class="icon-agenda icon_l"></i>
+              <span>Agenda Pública</span>
+            </a>
+          </div>
+          <div class="cen_box">
+            <div class="row">
+
+              <div class="col-sm-7 margin-bottom-2 cen_p-right">
+                <h6><strong> Otras formas de contacto</strong></h6>
+                <p>Av. Parque Isidora Sur 1061, Pudahuel</p>
+                <p class="cen_small"><strong> Recepción de documentos:</strong> Solamente en Teatinos 280 Piso 11. Lunes a Jueves de 09:00 a 16:00 (horario continuo) y Viernes de 09:00 a 13:00 hrs.</p>
+              </div>
+
+              <div class="col-sm-5 cen_border-lateral">
+                <ul class="cen_list-documentos">
+                                      <li>
+                      <div class="icon_circle icon_circle__min">
+                        <i class="icon-cell color-white"></i>
+                      </div>
+                      <p class="cen_phone"><strong>Teléfonos:</strong><span> <a href="tel:+56 - 224 246 300" class="color-base"> +56 - 224 246 300</a> <br/><a href="tel:" class="color-base"></a></span></p>
+                    </li>
+                                                    </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- /.modal-content -->
+    </div>
+    <!-- /.modal-dialog -->
+  </div>
+
+  <div id="encuesta" class="modal fade">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+        <div class="modal-body">
+          <div class="row form-fields">
+            <div class="col-md-10 col-md-offset-1">
+              <h5 class="modal-title margin-top-2 margin-bottom-2">Ayúdanos a mejorar tu experiencia en esta nueva
+                página del
+                Coordinador Eléctrico Nacional</h5>
+
+              
+               
+              </div>
+            </div>
+            <div class="send-success-form cen_text__center cen_box-int cen_text__center margin-top-2 cen_hidden">
+              <div class="row">
+                <div class="col-md-10 col-md-offset-1">
+                  <div class="icon_circle cen_align__center-element">
+                    <i class="icon-mensaje icon_s"></i>
+                  </div>
+                  <h6><strong>El mensaje ha sido enviado correctamente</strong> </h6>
+                  <p>Muchas gracias por enviarnos tu sugerencia, esto nos permite mejorar día a día. </p>
+                  <a href="" class="cen_btn cen_btn-primary send-more">Enviar otra Sugerencia</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- /.modal-content -->
+      </div>
+      <!-- /.modal-dialog -->
+    </div>
+
+    <!--facebook -->
+    <div id="fb-root"></div>
+    <script>
+    window.fbAsyncInit = function(){FB.init({appId:'326760874699896',cookie:true,status:true,xfbml:true});};
+
+    // Load the SDK asynchronously
+    (function(d, s, id)
+    {
+      var js, fjs = d.getElementsByTagName(s)[0];
+      if (d.getElementById(id)) {return;}
+      js = d.createElement(s); js.id = id;
+      js.src = "//connect.facebook.net/es_LA/all.js";
+      fjs.parentNode.insertBefore(js, fjs);
+    }(document, 'script', 'facebook-jssdk'));
+    </script>
+    <!-- ----->
+    <script type="text/javascript" id="click-tracker-js-js-extra">
+/* <![CDATA[ */
+var clickTrackerAjax = {"ajax_url":"https:\/\/www.coordinador.cl\/wp-admin\/admin-ajax.php","nonce":"0cfc87167f"};
+/* ]]> */
+</script>
+<script type="text/javascript" src="https://www.coordinador.cl/wp-content/plugins/click-tracker/click-tracker.js" id="click-tracker-js-js"></script>
+<script type="text/javascript" src="https://www.coordinador.cl/wp-includes/js/dist/vendor/wp-polyfill-inert.min.js?ver=3.1.2" id="wp-polyfill-inert-js"></script>
+<script type="text/javascript" src="https://www.coordinador.cl/wp-includes/js/dist/vendor/regenerator-runtime.min.js?ver=0.14.0" id="regenerator-runtime-js"></script>
+<script type="text/javascript" src="https://www.coordinador.cl/wp-includes/js/dist/vendor/wp-polyfill.min.js?ver=3.15.0" id="wp-polyfill-js"></script>
+<script type="text/javascript" id="contact-form-7-js-extra">
+/* <![CDATA[ */
+var wpcf7 = {"api":{"root":"https:\/\/www.coordinador.cl\/wp-json\/","namespace":"contact-form-7\/v1"},"cached":"1"};
+/* ]]> */
+</script>
+<script type="text/javascript" src="https://www.coordinador.cl/wp-content/plugins/contact-form-7/includes/js/index.js?ver=5.5.5" id="contact-form-7-js"></script>
+<script type="text/javascript" src="https://www.coordinador.cl/wp-content/plugins/add-campo-rut-cf7/scripts.js?1791319168" id="wpcf7rf-scripts-js"></script>
+<script type="text/javascript" id="wpcf7cf-scripts-js-extra">
+/* <![CDATA[ */
+var wpcf7cf_global_settings = {"ajaxurl":"https:\/\/www.coordinador.cl\/wp-admin\/admin-ajax.php"};
+/* ]]> */
+</script>
+<script type="text/javascript" src="https://www.coordinador.cl/wp-content/plugins/cf7-conditional-fields/js/scripts.js?ver=2.1.1" id="wpcf7cf-scripts-js"></script>
+<script type="text/javascript" src="https://www.google.com/recaptcha/api.js?render=6LeShmUrAAAAAIlnSeRnb-V3ESM_EIKFb-7lcEzK&amp;ver=3.0" id="google-recaptcha-js"></script>
+<script type="text/javascript" id="wpcf7-recaptcha-js-extra">
+/* <![CDATA[ */
+var wpcf7_recaptcha = {"sitekey":"6LeShmUrAAAAAIlnSeRnb-V3ESM_EIKFb-7lcEzK","actions":{"homepage":"homepage","contactform":"contactform"}};
+/* ]]> */
+</script>
+<script type="text/javascript" src="https://www.coordinador.cl/wp-content/plugins/contact-form-7/modules/recaptcha/index.js?ver=5.5.5" id="wpcf7-recaptcha-js"></script>
+
+
+    
+      
+
+<!-- Page supported by LiteSpeed Cache 7.1 on 2026-10-06 14:39:28 --><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a46779bd4ce8c6eb',t:'MTc5MTMxOTE2Nw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v31edd6df95cf4e85bb4c19e7a9bdbcba1788362987495" integrity="sha512-iIg7k2xntmwu6/uSb5tpc/hySgZc4eoL31yB29W6tJFo2akwjPWcEqnCEdJvGexCL0KEQwVYv5BlowfhVz26hg==" data-cf-beacon='{"version":"2024.11.0","token":"3bd4c49daed048f8bd0e2c076139eef9","spa":2}' crossorigin="anonymous"></script>
