@@ -30,6 +30,32 @@ Copy-Item .env.example .env
 
 ## Usar
 
+### El menú (uso diario)
+
+```powershell
+uv run cmg
+```
+
+Sin comando, `cmg` abre un menú como el de `CMG_Portable`:
+
+- **Búsqueda difusa de barras:** se escribe parte del nombre (`elvira 13`, `blancas`, `quelon`)
+  y aparecen las que calzan. Ignora mayúsculas, puntos, guiones bajos, tildes y la Ñ, y tolera
+  errores de tipeo.
+- **Selección múltiple:** de la lista de coincidencias se eligen varias con `1,3`, `2-5` o
+  `todas`; se puede buscar de nuevo para sumar más, y `quitar` saca una.
+- **`v` vuelve al paso anterior** sin perder lo elegido; Enter vacío cancela.
+- Antes de generar archivos muestra una previsualización por barra y pide confirmación.
+
+| Opción | Qué hace |
+|---|---|
+| 1 | Descargar CMg quinceminutal de una o varias barras (Excel / CSV / Parquet) |
+| 2 | Ver promedios por bloque en pantalla (una barra en detalle, o varias lado a lado) |
+| 3 | Riesgo nodal de una referencia contra una o varias barras, exportado |
+| 4 | Actualizar desde la página del Coordinador (sugiere desde qué día) |
+| 5 | Revisar si el Coordinador cambió algo |
+
+### Los comandos (para automatizar)
+
 ```powershell
 # qué datos hay
 uv run cmg estado
@@ -111,7 +137,8 @@ mensuales.
 
 ```
 src/cmg_ingesta/
-├─ cli.py          la única capa que imprime y pregunta
+├─ cli.py          comandos para automatizar; sin comando abre el menú
+├─ menu/           el menú interactivo: búsqueda difusa, diálogos y flujos
 ├─ conexion.py     una sola forma de abrir DuckDB
 ├─ config.py       configuración desde el entorno (12-factor)
 ├─ domain/         reglas de negocio puras, sin I/O
@@ -129,7 +156,7 @@ Gold (negocio).
 ## Desarrollar
 
 ```powershell
-uv run pytest          # 355 tests, ninguno toca la red
+uv run pytest          # 441 tests, ninguno toca la red
 uv run mypy            # tipado estricto
 uv run ruff check .    # linter
 uv run ruff format .   # formateo
@@ -156,4 +183,5 @@ uv run ruff format .   # formateo
 | Descarga desde la página del CEN (2025+) | ✅ |
 | Vigilancia de la fuente y completitud | ✅ |
 | Ingesta de la página a Silver | ✅ |
+| Menú interactivo | ✅ |
 | Carga real de 2025-01 a hoy | ⏳ pendiente de aprobación |

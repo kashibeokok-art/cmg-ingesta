@@ -22,7 +22,7 @@ import pandas as pd
 
 from cmg_ingesta.domain import periodo
 from cmg_ingesta.domain.periodo import Mes
-from cmg_ingesta.gold import bloques_mes
+from cmg_ingesta.gold import bloques_mes, riesgo_nodal
 from cmg_ingesta.silver import leer
 
 Formato = Literal["excel", "csv", "parquet"]
@@ -155,6 +155,73 @@ def exportar_cmg(
     if "csv" in formatos:
         escritas.append(escribir_csv(serie, nombre_unico(carpeta, nombre, ".csv")))
         escritas.append(escribir_csv(resumen, nombre_unico(carpeta, nombre + "_bloques", ".csv")))
+
+    if "parquet" in formatos:
+        escritas.append(escribir_parquet(serie, nombre_unico(carpeta, nombre, ".parquet")))
+
+    return escritas
+
+
+def exportar_riesgo(
+    con: duckdb.DuckDBPyConnection,
+    base: Path,
+    referencia: str,
+    comparada: str,
+    desde: Mes,
+    hasta: Mes,
+    carpeta: Path,
+    formatos: tuple[Formato, ...] = ("excel",),
+) -> list[Path]:
+    """Exporta el riesgo nodal entre dos barras: la serie de 15 minutos y el resumen.
+
+    riesgo = CMg(comparada) - CMg(referencia); positivo = la comparada es mas cara.
+    Devuelve las rutas escritas. No imprime nada.
+    """
+    if not formatos:
+        raise ValueError("hay que indicar al menos un formato")
+    desconocidos = set(formatos) - set(FORMATOS)
+    if desconocidos:
+        raise ValueError(f"formato no soportado: {sorted(desconocidos)}")
+
+    serie = riesgo_nodal.serie_riesgo(con, base, referencia, comparada, desde, hasta)
+    if serie.empty:
+        raise ValueError(
+            f"no hay intervalos comunes entre {referencia} y {comparada} "
+            f"de {periodo.formatear(desde)} a {periodo.formatear(hasta)}"
+        )
+    resumen = riesgo_nodal.resumen_riesgo(con, base, referencia, comparada, desde, hasta)
+    ceros, total = riesgo_nodal.intervalos_sin_porcentaje(con, base, referencia, desde, hasta)
+
+    rango = f"{periodo.formatear(desde)}_a_{periodo.formatear(hasta)}"
+    nombre = _nombre_seguro(f"Riesgo_{referencia}_vs_{comparada}_{rango}")
+    escritas: list[Path] = []
+
+    if "excel" in formatos:
+        anios = pd.to_datetime(serie["fecha"]).dt.year
+        por_anio = {
+            str(a): serie[anios == a].reset_index(drop=True) for a in sorted(anios.unique())
+        }
+        info = hoja_info(
+            {
+                "referencia": referencia,
+                "comparada": comparada,
+                "formula": "riesgo = CMg(comparada) - CMg(referencia)",
+                "signo": "positivo = la comparada es mas cara",
+                "periodo": f"{periodo.formatear(desde)} a {periodo.formatear(hasta)}",
+                "intervalos_comunes": f"{len(serie):,}",
+                "riesgo_promedio_usd_mwh": round(float(serie["riesgo_usd_mwh"].mean()), 4),
+                "referencia_en_cero": f"{ceros:,} de {total:,} intervalos",
+                "riesgo_pct": "en 'Resumen' se calcula sobre los promedios del mes; "
+                "en las hojas por año, intervalo a intervalo (vacio si la referencia es 0)",
+            }
+        )
+        hojas = {**por_anio, "Resumen": resumen, "Info": info}
+        ruta, _ = escribir_excel(hojas, nombre_unico(carpeta, nombre, ".xlsx"))
+        escritas.append(ruta)
+
+    if "csv" in formatos:
+        escritas.append(escribir_csv(serie, nombre_unico(carpeta, nombre, ".csv")))
+        escritas.append(escribir_csv(resumen, nombre_unico(carpeta, nombre + "_resumen", ".csv")))
 
     if "parquet" in formatos:
         escritas.append(escribir_parquet(serie, nombre_unico(carpeta, nombre, ".parquet")))

@@ -34,7 +34,7 @@ import re
 import time
 import zipfile
 from collections import Counter
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal, TypedDict
@@ -711,6 +711,7 @@ def sincronizar_vigilando(
     pausa: float = cen.PAUSA_MINIMA,
     timeout: float = 30.0,
     hoy: date | None = None,
+    avisar: Callable[[str], None] | None = None,
 ) -> tuple[list[cen.EntradaManifiesto], list[Hallazgo]]:
     """`sincronizar` + deteccion de cambios en cada pagina y cada ZIP.
 
@@ -719,15 +720,22 @@ def sincronizar_vigilando(
 
     Al final revisa la completitud del rango: dias sin archivo y dias que siguen
     solo con preliminar.
+
+    `avisar` recibe una linea por dia revisado y por ZIP bajado: un backfill son
+    cientos de dias y sin avance la pantalla parece colgada.
     """
     anios = range(desde.year, hasta.year + 1)
     slugs, hallazgos = actualizar_slugs(sesion, carpeta, anios, timeout=timeout)
 
     def al_leer_pagina(dia: date, html: str, docs: list[cen.Documento]) -> None:
         hallazgos.extend(revisar_pagina_dia(dia, html, docs))
+        if avisar:
+            avisar(f"  {dia}  {len(docs)} archivo(s) publicado(s)")
 
     def al_bajar(ruta: Path, entrada: cen.EntradaManifiesto) -> None:
         hallazgos.extend(revisar_zip(ruta, date.fromisoformat(entrada["fecha_operacion"])))
+        if avisar:
+            avisar(f"    + {entrada['nombre']}  ({entrada['bytes'] / 1024 / 1024:.1f} MB)")
 
     nuevos = cen.sincronizar(
         desde,

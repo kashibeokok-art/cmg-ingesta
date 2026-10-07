@@ -179,3 +179,55 @@ def test_exportar_dos_veces_no_sobrescribe(
     )
     assert uno[0] != dos[0]
     assert uno[0].exists() and dos[0].exists()
+
+
+# ---------------------------------------------------------- exportar_riesgo
+
+
+@pytest.fixture
+def base_par(con: duckdb.DuckDBPyConnection, tmp_path: Path, sembrar: Sembrar) -> Path:
+    silver = tmp_path / "silver_par"
+    sembrar(
+        con,
+        silver,
+        2024,
+        6,
+        "REF",
+        {"A": 100.0, "B": 10.0, "C": 200.0},
+        otras={"COMP": {"A": 110.0, "B": 10.0, "C": 150.0}},
+    )
+    return silver
+
+
+def test_exportar_riesgo_excel(
+    con: duckdb.DuckDBPyConnection, base_par: Path, tmp_path: Path
+) -> None:
+    rutas = exportar.exportar_riesgo(
+        con, base_par, "REF", "COMP", (2024, 6), (2024, 6), tmp_path / "out"
+    )
+    assert [r.suffix for r in rutas] == [".xlsx"]
+    libro = openpyxl.load_workbook(rutas[0], read_only=True)
+    assert libro.sheetnames == ["2024", "Resumen", "Info"]
+
+    resumen = pd.read_excel(rutas[0], sheet_name="Resumen")
+    por_bloque = dict(zip(resumen["bloque"], resumen["riesgo_usd_mwh"], strict=True))
+    assert por_bloque == pytest.approx({"A": 10.0, "B": 0.0, "C": -50.0})
+
+
+def test_exportar_riesgo_csv_trae_serie_y_resumen(
+    con: duckdb.DuckDBPyConnection, base_par: Path, tmp_path: Path
+) -> None:
+    rutas = exportar.exportar_riesgo(
+        con, base_par, "REF", "COMP", (2024, 6), (2024, 6), tmp_path, formatos=("csv",)
+    )
+    assert [r.name for r in rutas] == [
+        "Riesgo_REF_vs_COMP_2024-06_a_2024-06.csv",
+        "Riesgo_REF_vs_COMP_2024-06_a_2024-06_resumen.csv",
+    ]
+
+
+def test_exportar_riesgo_sin_intervalos_comunes(
+    con: duckdb.DuckDBPyConnection, base_par: Path, tmp_path: Path
+) -> None:
+    with pytest.raises(ValueError, match="no hay intervalos comunes"):
+        exportar.exportar_riesgo(con, base_par, "REF", "NO_EXISTE", (2024, 6), (2024, 6), tmp_path)

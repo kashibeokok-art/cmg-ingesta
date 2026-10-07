@@ -443,3 +443,53 @@ def test_el_manifiesto_se_escribe_de_forma_atomica(tmp_path: Path) -> None:
     cen.sincronizar(dia, dia, tmp_path, sesion, pausa=1.0)
     assert list(tmp_path.glob("*.tmp")) == []
     assert cen.ruta_manifiesto(tmp_path).exists()
+
+
+# ------------------------------------------------------------ desde_sugerido
+
+
+def _entrada(dia: str, tipo: str) -> cen.EntradaManifiesto:
+    return {
+        "url": "",
+        "nombre": f"{tipo}_{dia}.zip",
+        "tipo": tipo,
+        "version": 1,
+        "reemision": 0,
+        "fecha_operacion": dia,
+        "fecha_publicacion": None,
+        "sha256": "",
+        "bytes": 0,
+        "descargado_en": "",
+    }
+
+
+def _manifiesto(*entradas: cen.EntradaManifiesto) -> dict[str, cen.EntradaManifiesto]:
+    return {e["nombre"]: e for e in entradas}
+
+
+AYER = date(2026, 10, 6)
+
+
+def test_desde_sugerido_sin_nada_descargado_es_el_backfill() -> None:
+    assert cen.desde_sugerido({}, AYER) == cen.INICIO_FUENTE == date(2025, 1, 1)
+
+
+def test_desde_sugerido_sigue_despues_del_ultimo_dia() -> None:
+    m = _manifiesto(_entrada("2026-09-29", "def"), _entrada("2026-09-30", "def"))
+    assert cen.desde_sugerido(m, AYER) == date(2026, 10, 1)
+
+
+def test_desde_sugerido_vuelve_al_primer_dia_que_sigue_en_pre() -> None:
+    """El def de un dia en pre puede haber llegado: hay que volver a mirarlo."""
+    m = _manifiesto(
+        _entrada("2026-09-20", "pre"),
+        _entrada("2026-09-25", "pre"),
+        _entrada("2026-09-25", "def"),  # este ya tiene definitivo
+        _entrada("2026-09-30", "def"),
+    )
+    assert cen.desde_sugerido(m, AYER) == date(2026, 9, 20)
+
+
+def test_desde_sugerido_nunca_pasa_de_ayer() -> None:
+    m = _manifiesto(_entrada("2026-10-06", "def"))
+    assert cen.desde_sugerido(m, AYER) == AYER

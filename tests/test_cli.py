@@ -392,3 +392,40 @@ def test_vigilar_fuente_dias_invalido(sin_red: Callable[..., Sesion]) -> None:
     sin_red({})
     r = runner.invoke(cli.app, ["vigilar-fuente", "--dias", "0"])
     assert r.exit_code == cli.SALIDA_ERROR
+
+
+# ----------------------------------------------------------------- menu
+
+
+@pytest.fixture
+def sin_limpiar(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cmg_ingesta.menu import app as menu_app
+
+    monkeypatch.setattr(menu_app, "limpiar_pantalla", lambda: None)
+
+
+@pytest.mark.usefixtures("sin_limpiar")
+def test_sin_comando_abre_el_menu(con_base: Path) -> None:
+    """Doble clic en el programa = menu, no la ayuda de los comandos."""
+    r = runner.invoke(cli.app, [], input="0\n")
+    assert r.exit_code == cli.SALIDA_OK
+    assert "COSTOS MARGINALES POR BARRA" in r.stdout
+    assert "[1]  Descargar CMg quinceminutal" in r.stdout
+
+
+@pytest.mark.usefixtures("sin_limpiar")
+def test_menu_descarga_de_punta_a_punta(con_base: Path, entorno: Path) -> None:
+    respuestas = ["1", "barra", "todas", "", "", "", "s", "", "0"]
+    r = runner.invoke(cli.app, ["menu"], input="\n".join(respuestas) + "\n")
+    assert r.exit_code == cli.SALIDA_OK
+    assert sorted(p.name for p in (entorno / "data" / "descargas").glob("*.xlsx")) == [
+        "CMg_BARRA_1_2024-06_a_2024-07.xlsx",
+        "CMg_BARRA_2_2024-06_a_2024-07.xlsx",
+    ]
+
+
+@pytest.mark.usefixtures("sin_limpiar")
+def test_los_comandos_siguen_funcionando_sin_menu(con_base: Path) -> None:
+    r = runner.invoke(cli.app, ["estado"])
+    assert r.exit_code == cli.SALIDA_OK
+    assert "COSTOS MARGINALES" not in r.stdout

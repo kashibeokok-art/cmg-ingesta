@@ -52,8 +52,11 @@ Modo mentor (§2): Claude diseña, explica y revisa; **el usuario escribe el có
 | **M4** | **Descarga desde la página** (`extract/coordinador_cmg.py`, `curl_cffi`) | ✅ 2026-10-06 |
 | **M4b** | **Vigilancia de la fuente** (`quality/deriva.py`): cambios de formato + completitud | ✅ 2026-10-06 |
 | **M5** | **Ingesta de (b) a Silver** (`extract/{pagina_cen,ingerir_cen}.py`) | ✅ 2026-10-06 |
+| **M8** | **Menú interactivo** (`menu/{busqueda,consola,app}.py`), estilo `CMG_Portable` | ✅ 2026-10-07 |
 
-**355 tests · `mypy --strict` limpio · `ruff` limpio.**
+**441 tests · `mypy --strict` limpio · `ruff` limpio.**
+
+**Uso diario:** `uv run cmg` sin argumentos abre el menú. Los comandos siguen para automatizar.
 
 **Flujo diario de la fuente (b):**
 
@@ -140,10 +143,10 @@ Del programa actual **no se porta**: ingesta de retiros, descarga de retiros por
 valorización de retiros, ficha de cliente, y la compactación de medidas de red
 (`preparar_medidas.py`). Todo eso es retiros.
 
-⚠️ **Supuesto que el usuario debe confirmar:** las **proyecciones de CMg** (opciones 6 y 7 del
-programa actual, que vienen de las planillas AMEBA) **también quedan fuera**, porque su fuente no
-es ninguna de las dos de §0.1. Son CMg y son por barra, así que la decisión no es obvia: si se
-quieren incluir, hay que agregar AMEBA como tercera fuente.
+**Proyecciones de CMg (AMEBA) — fuera por ahora, no descartadas** (decisión del usuario,
+2026-10-07). Son las opciones 6 y 7 del programa actual y vienen de las planillas AMEBA, que no
+son ninguna de las dos fuentes de §0.1. Si se retoman, AMEBA entra como tercera fuente; no
+diseñar nada que lo impida.
 
 ### 0.4 🔴 El riesgo que abre esta decisión
 
@@ -753,6 +756,27 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho
   los 201,8 M de filas migradas ni a leer con `union_by_name`.
 
 ## 8. Bitácora
+
+### 2026-10-07 — Sesión 4: menú interactivo
+- **AMEBA:** fuera por ahora, no descartada (§0.3).
+- **M8, menú** a pedido del usuario, "como el de `CMG_Portable`, con búsqueda fuzzy y selección
+  múltiple". Se portó la experiencia del legado (`CMG.py`, `core.elegir_barras()`,
+  `descargar.ejecutar()`): números, `v` para volver, `quitar`, `1,3`/`todas`, previsualización y
+  confirmación. Sin dependencias nuevas (`difflib`).
+- **Diferencias con el legado:** entrada/salida **inyectadas** (`Consola`) → cada diálogo se
+  testea con un guion de respuestas; centinela tipado `Nav.VOLVER` en vez del texto `"back"`;
+  búsqueda por palabras en cualquier orden, rangos `2-5`, sin tildes/Ñ, y sin ruido de `difflib`
+  cuando hay coincidencia por texto; una coincidencia única se agrega sola.
+- **Sin caché del estado de arranque:** el legado lo cacheaba; aquí `resumen_base` tarda 0,3 s
+  sobre 201,8 M filas porque Parquet guarda los conteos (YAGNI).
+- **Funciones nuevas que el menú necesitó:** `leer.resumen_barras` (previsualización),
+  `exportar.exportar_riesgo` (el CLI solo imprimía), `cen.desde_sugerido` (opción 4: lo nuevo +
+  los días que siguen en `pre`), `avisar` en `deriva.sincronizar_vigilando` (avance en pantalla).
+- **Hallazgo de datos:** `PENABLANCA____013` y `PEÑABLANCA____013` existen como barras
+  **distintas** (también `_110`). Probablemente la misma barra con dos grafías. No se normaliza
+  (regla de §0.6); queda para decisión del usuario.
+- Errores propios: B8 (la normalización del legado borraba la Ñ), C8 (tests con semántica
+  supuesta).
 
 ### 2026-10-06 — Sesión 3: fuente (b) completa
 - **M4:** extractor de la página con `curl_cffi`; fixtures HTML reales; smoke test real

@@ -99,3 +99,37 @@ def existe_barra(con: duckdb.DuckDBPyConnection, base: Path, barra: str) -> bool
         f"SELECT 1 FROM {sql_dataset(base)} WHERE barra = ? LIMIT 1", [barra]
     ).fetchone()
     return fila is not None
+
+
+def resumen_barras(
+    con: duckdb.DuckDBPyConnection,
+    base: Path,
+    barras: list[str],
+    desde: Mes,
+    hasta: Mes,
+) -> pd.DataFrame:
+    """Una fila por barra con lo que hay en el periodo, para previsualizar un exporte.
+
+    Columnas: barra, intervalos, desde, hasta, cmg_promedio, hora_extra.
+    Una barra sin datos en el periodo simplemente no aparece.
+    """
+    if not barras:
+        return pd.DataFrame(
+            columns=["barra", "intervalos", "desde", "hasta", "cmg_promedio", "hora_extra"]
+        )
+    marcas = ", ".join("?" * len(barras))
+    return con.execute(
+        f"""
+        SELECT barra,
+               count(*) AS intervalos,
+               min(fecha) AS desde,
+               max(fecha) AS hasta,
+               avg(cmg_usd_mwh) AS cmg_promedio,
+               count(*) FILTER (WHERE es_hora_extra) AS hora_extra
+        FROM {sql_dataset(base)}
+        WHERE barra IN ({marcas}) AND {sql_filtro_periodo(desde, hasta)}
+        GROUP BY barra
+        ORDER BY barra
+        """,
+        barras,
+    ).df()

@@ -51,31 +51,39 @@ def sembrar() -> Sembrar:
         valor_por_bloque: dict[str, float] | None = None,
         dias: int = 1,
         horas: list[int] | None = None,
+        otras: dict[str, dict[str, float]] | None = None,
     ) -> None:
-        valor_por_bloque = valor_por_bloque or dict(VALORES_BLOQUE)
+        """`otras` agrega mas barras AL MISMO MES, cada una con sus valores.
+
+        Hace falta porque escribir un mes reemplaza la particion entera: sembrar
+        dos veces el mismo mes deja solo la ultima barra.
+        """
+        por_barra = {barra: valor_por_bloque or dict(VALORES_BLOQUE), **(otras or {})}
         rango = horas if horas is not None else list(range(24))
-        casos = " ".join(
-            f"WHEN {h} THEN {valor_por_bloque[bloques.bloque_de_hora(h)]}" for h in rango
-        )
         bloque_sql = " ".join(f"WHEN {h} THEN '{bloques.bloque_de_hora(h)}'" for h in rango)
         lista = ", ".join(str(h) for h in rango)
-        # el nombre va escapado: hay barras con apostrofo
-        barra_sql = "'" + barra.replace("'", "''") + "'"
-        consulta = f"""
-            SELECT {barra_sql} AS barra,
-                   make_date({anio}, {mes}, d) AS fecha,
-                   CAST(h AS UTINYINT) AS hora,
-                   CAST(m AS UTINYINT) AS minuto,
-                   CAST(CASE h {bloque_sql} END AS VARCHAR) AS bloque,
-                   CAST(CASE h {casos} END AS DOUBLE) AS cmg_usd_mwh,
-                   (h = 24) AS es_hora_extra,
-                   CAST(NULL AS TIMESTAMP) AS fecha_hora,
-                   'maestro_cmg_db' AS origen,
-                   CAST('2026-10-06' AS TIMESTAMP) AS ingerido_en
-            FROM (SELECT unnest([{lista}]) AS h) a,
-                 (SELECT unnest([0, 15, 30, 45]) AS m) b,
-                 (SELECT unnest(range(1, {dias + 1})) AS d) c
-        """
+
+        def _select(nombre: str, valores: dict[str, float]) -> str:
+            casos = " ".join(f"WHEN {h} THEN {valores[bloques.bloque_de_hora(h)]}" for h in rango)
+            # el nombre va escapado: hay barras con apostrofo
+            barra_sql = "'" + nombre.replace("'", "''") + "'"
+            return f"""
+                SELECT {barra_sql} AS barra,
+                       make_date({anio}, {mes}, d) AS fecha,
+                       CAST(h AS UTINYINT) AS hora,
+                       CAST(m AS UTINYINT) AS minuto,
+                       CAST(CASE h {bloque_sql} END AS VARCHAR) AS bloque,
+                       CAST(CASE h {casos} END AS DOUBLE) AS cmg_usd_mwh,
+                       (h = 24) AS es_hora_extra,
+                       CAST(NULL AS TIMESTAMP) AS fecha_hora,
+                       'maestro_cmg_db' AS origen,
+                       CAST('2026-10-06' AS TIMESTAMP) AS ingerido_en
+                FROM (SELECT unnest([{lista}]) AS h) a,
+                     (SELECT unnest([0, 15, 30, 45]) AS m) b,
+                     (SELECT unnest(range(1, {dias + 1})) AS d) c
+            """
+
+        consulta = " UNION ALL ".join(_select(n, v) for n, v in por_barra.items())
         escribir.escribir_particion(con, consulta, base, anio, mes)
 
     return _sembrar

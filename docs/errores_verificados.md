@@ -179,6 +179,18 @@ y `PPA_` en `ppa-pipeline`. Si una entrada aplica solo a un proyecto, decirlo ex
   Y los artefactos de cobertura parcial (`max/min = inf`, energía solo en un mes) se ven como
   estacionalidad extrema: filtrar `min(mes) > 0` antes de rankear.
 
+### B8. Portar la normalización del legado borraba la Ñ
+- **Error:** porté `core._normaliza()` tal cual para la búsqueda de barras del menú:
+  `re.sub(r"[^0-9A-Za-z]+", " ", texto.upper())`. La `Ñ` no está en `A-Z`, así que caía en el
+  separador: `PEÑABLANCA____013` quedaba como `PE ABLANCA 013`.
+- **Evidencia (2026-10-07):** al probar el menú contra la base real, buscar "penablanca" no traía
+  `PEÑABLANCA`. Y la base tiene **las dos grafías como barras distintas** (`PENABLANCA____013` y
+  `PEÑABLANCA____013`), así que el usuario veía solo la mitad sin saberlo.
+- **Arreglo:** descomponer con `unicodedata.normalize("NFKD", ...)` y descartar las marcas
+  (`Ñ` = `N` + tilde) antes de limpiar separadores.
+- **Lección:** un patrón `[A-Z]` en español es un bug esperando datos. Al portar, probar con
+  nombres reales que tengan Ñ y tildes, no solo con los de los tests sintéticos.
+
 ---
 
 ## C. Método de trabajo
@@ -236,6 +248,20 @@ y `PPA_` en `ppa-pipeline`. Si una entrada aplica solo a un proyecto, decirlo ex
   contradicen una regla, la hipótesis por defecto es que **los datos tienen un defecto**, no que
   la regla no sea computable. Y el diseño correcto suele ser **calcular + validar**, no reemplazar
   el cálculo por una detección heurística.
+
+### C8. Escribir el test con la semántica supuesta, no con la documentada
+- **Error (2026-10-07), dos veces en la misma tarea:**
+  1. En un test del menú usé `"2024-06"` creyendo que era "solo junio". `domain/periodo.py` dice
+     en su docstring que es **"desde 2024-06 hasta el último disponible"**, y lo había leído
+     minutos antes.
+  2. Sembré dos barras en el mismo mes con dos llamadas a `sembrar`, sin recordar que escribir un
+     mes **reemplaza la partición entera** (ADR-H06): quedaba solo la segunda barra, y el riesgo
+     nodal no tenía intervalos comunes.
+- **Evidencia:** los dos tests fallaron al primer intento; el código estaba bien.
+- **Lección:** antes de escribir la aserción, releer el contrato de la función que se usa como
+  dato de entrada. Un test que falla por un supuesto del test cuesta una vuelta; uno que **pasa**
+  por un supuesto equivocado no se detecta nunca. Para el segundo caso, `sembrar` ahora acepta
+  `otras={...}` para varias barras en el mismo mes.
 
 ### C4. Explicaciones demasiado densas y preguntas que no se entienden
 - **Error:** en una misma respuesta mezclé el diagnóstico, la corrección, un concepto nuevo, una

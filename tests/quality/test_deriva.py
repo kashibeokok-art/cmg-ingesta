@@ -639,3 +639,18 @@ def test_sincronizar_vigilando_avisa_un_dia_que_el_cen_no_publico(tmp_path: Path
     nuevos, h = deriva.sincronizar_vigilando(dia, dia, tmp_path, sesion, pausa=1.0, hoy=HOY)
     assert nuevos == []
     assert "dia_sin_registro" in tipos(h)
+
+
+def test_sincronizar_vigilando_informa_el_avance(tmp_path: Path) -> None:
+    """Una linea por dia y una por ZIP: en un backfill la pantalla no queda muda."""
+    dia = date(2026, 1, 15)
+    url_zip = UP + "Antecedentes_CMG_Real_def_260115.zip"
+    sesion = SesionFalsa(
+        paginas={cen.url_dia(dia): _pagina_con(url_zip)},
+        zips={url_zip: b"PK\x03\x04no-es-un-zip-de-verdad"},
+    )
+    lineas: list[str] = []
+    deriva.sincronizar_vigilando(dia, dia, tmp_path, sesion, pausa=1.0, avisar=lineas.append)
+
+    assert any("2026-01-15" in linea and "1 archivo" in linea for linea in lineas)
+    assert any("+ Antecedentes_CMG_Real_def_260115.zip" in linea for linea in lineas)

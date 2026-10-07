@@ -26,6 +26,8 @@ from cmg_ingesta.domain import periodo
 from cmg_ingesta.extract import coordinador_cmg as cen
 from cmg_ingesta.extract import ingerir_cen, migrar
 from cmg_ingesta.gold import bloques_mes, riesgo_nodal
+from cmg_ingesta.menu import app as menu_app
+from cmg_ingesta.menu.consola import Consola
 from cmg_ingesta.quality import deriva
 from cmg_ingesta.reportes import exportar
 from cmg_ingesta.silver import leer
@@ -35,8 +37,7 @@ SALIDA_ERROR = 1
 SALIDA_CON_HALLAZGOS = 2
 
 app = typer.Typer(
-    help="Base de costos marginales por barra del SEN de Chile.",
-    no_args_is_help=True,
+    help="Base de costos marginales por barra del SEN de Chile. Sin comando, abre el menu.",
     add_completion=False,
 )
 
@@ -81,6 +82,29 @@ def _informar(hallazgos: list[deriva.Hallazgo], cfg: Settings, titulo: str) -> N
     if deriva.hay_que_revisar(hallazgos):
         typer.echo("Hay avisos o criticos: revisar el reporte.", err=True)
         raise typer.Exit(SALIDA_CON_HALLAZGOS)
+
+
+@app.callback(invoke_without_command=True)
+def principal(contexto: typer.Context) -> None:
+    """Sin subcomando abre el menu: es lo que pasa al hacer doble clic en el programa."""
+    if contexto.invoked_subcommand is None:
+        menu()
+
+
+@app.command()
+def menu() -> None:
+    """Abre el menu interactivo, con busqueda de barras y seleccion multiple."""
+    contexto = menu_app.Contexto(
+        cfg=_settings(),
+        consola=Consola(),
+        nueva_sesion=_sesion,
+        hoy=_hoy,
+        limpiar=menu_app.limpiar_pantalla,
+    )
+    try:
+        menu_app.ejecutar(contexto)
+    except KeyboardInterrupt:
+        typer.echo("")
 
 
 @app.command()

@@ -555,3 +555,28 @@ def mejor_version(docs: list[Documento]) -> Documento | None:
         return None
     orden = {"def": 2, "pre": 1, "desconocido": 0}
     return max(docs, key=lambda d: (orden.get(d["tipo"], 0), d["version"], d["reemision"]))
+
+
+#: Primer dia de la fuente (b). Lo anterior viene del Maestro (CLAUDE.md §0.1).
+INICIO_FUENTE = date(2025, 1, 1)
+
+
+def desde_sugerido(manifiesto: dict[str, EntradaManifiesto], ayer: date) -> date:
+    """Desde que dia conviene sincronizar para ponerse al dia sin rehacer todo.
+
+    Es el menor entre:
+    - el dia siguiente al ultimo descargado (lo nuevo), y
+    - el primer dia que todavia solo tiene preliminar (puede haber llegado el def).
+
+    Con el manifiesto vacio es el inicio de la fuente: eso es el backfill completo.
+    Nunca devuelve un dia posterior a `ayer`.
+    """
+    if not manifiesto:
+        return INICIO_FUENTE
+    tipos: dict[date, set[str]] = {}
+    for e in manifiesto.values():
+        dia = date.fromisoformat(e["fecha_operacion"])
+        tipos.setdefault(dia, set()).add(e["tipo"])
+    solo_pre = [d for d, t in tipos.items() if "def" not in t]
+    candidatos = [max(tipos) + timedelta(days=1), *solo_pre]
+    return min(min(candidatos), ayer)
