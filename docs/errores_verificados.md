@@ -238,6 +238,9 @@ y `PPA_` en `ppa-pipeline`. Si una entrada aplica solo a un proyecto, decirlo ex
   `PermissionError: [WinError 5] Acceso denegado` (antivirus/indexador, el mismo fenómeno que la
   sesión 5 vio en el manifiesto). Resultado: `anio=2021/mes=10` borrado y `mes=10__tmp` con los
   datos. No se perdió nada solo porque la temporal estaba completa y la migración es re-ejecutable.
+- **Origen:** el legado hace lo mismo (`CMG_Build/src/ingesta.py:295-298`: `rmtree(pdir)` y luego
+  `os.replace`), y en la sesión 1 lo catalogué en CLAUDE.md §5 como "lo que sí se conserva porque
+  ya está bien". Se portó el defecto junto con el patrón.
 - **Por qué los tests no lo vieron:** `test_un_fallo_deja_intacto_el_mes_anterior` simulaba un
   fallo **al escribir** la temporal (paso 1), nunca **al renombrar** (paso 3).
 - **Corrección:** intercambio en tres renombres: `destino → destino__old`, `tmp → destino`, y

@@ -97,7 +97,8 @@ manifiesto + sha256. Smoke test real 2026-09-28..30: 4 ZIP, todos íntegros, seg
   2026-09-28: el PRE del ZIP pre y el DEF del ZIP def coinciden en las 158.016 filas.
   `MODIFICADO=SI` marca donde el PRE difiere del CMg en línea (1.839 filas ese día).
 - **Nombres de barra iguales al Maestro**: 1.531 de las 1.534 barras de 2024-12 calzan exacto;
-  115 barras son nuevas de 2025–26 y 3 se retiraron. No se normaliza nada.
+  115 barras son nuevas de 2025–26 y 3 se retiraron. No se normaliza nada, **salvo** las 20
+  barras renombradas Ñ → N de `domain/barras.py`, decididas por el usuario (ADR-H08).
 - **Estado en el linaje:** `origen` = `pagina_cen_def` | `pagina_cen_pre` | `maestro_cmg_db`.
   El exporte lo muestra, así se sabe si un mes trae preliminares.
 - **Incremental por huella** (sha256 de los ZIP de cada mes, en `bronze/cen_cmg/ingesta_silver.json`):
@@ -685,7 +686,9 @@ Lo que **no** se repite:
 
 Lo que **sí** se conserva porque ya está bien:
 
-- Escritura atómica: `tmp` + `os.replace` (`ingesta.py:286-298`).
+- Escritura atómica: `tmp` + `os.replace` (`ingesta.py:286-298`). ⚠️ El legado (y nuestra
+  primera versión) borraba el destino **antes** de renombrar, lo que no es atómico: ver B9.
+  `silver/escribir.py` ahora intercambia con `__old` y reintentos.
 - Idempotencia por `(barra, fecha, hora, minuto)`.
 - DST con `fold` en `comun/tiempo.py: mapa_cuartos()`.
 - La alerta de formato desconocido con documento de instrucciones.
@@ -805,8 +808,8 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho
   `exportar.exportar_riesgo` (el CLI solo imprimía), `cen.desde_sugerido` (opción 4: lo nuevo +
   los días que siguen en `pre`), `avisar` en `deriva.sincronizar_vigilando` (avance en pantalla).
 - **Hallazgo de datos:** `PENABLANCA____013` y `PEÑABLANCA____013` existen como barras
-  **distintas** (también `_110`). Probablemente la misma barra con dos grafías. No se normaliza
-  (regla de §0.6); queda para decisión del usuario.
+  **distintas** (también `_110`). Probablemente la misma barra con dos grafías.
+  → **Resuelto el 2026-10-08** (sesión 5b, ADR-H08): eran 20 barras, unificadas sin Ñ.
 - Errores propios: B8 (la normalización del legado borraba la Ñ), C8 (tests con semántica
   supuesta).
 
