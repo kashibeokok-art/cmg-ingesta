@@ -18,6 +18,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 
+import duckdb
 import typer
 
 from cmg_ingesta import conexion
@@ -28,7 +29,7 @@ from cmg_ingesta.extract import ingerir_cen, migrar
 from cmg_ingesta.gold import bloques_mes, riesgo_nodal
 from cmg_ingesta.menu import app as menu_app
 from cmg_ingesta.menu.consola import Consola
-from cmg_ingesta.quality import deriva
+from cmg_ingesta.quality import cobertura, deriva
 from cmg_ingesta.reportes import exportar
 from cmg_ingesta.silver import leer
 
@@ -59,6 +60,15 @@ def _sesion() -> cen.Sesion:
 def _hoy() -> date:
     """Fecha de hoy. Aparte por lo mismo: los tests fijan el reloj."""
     return date.today()
+
+
+def _cobertura(con: duckdb.DuckDBPyConnection, cfg: Settings) -> cobertura.Cobertura:
+    """Que dias deberia tener la base y cuales tiene. Sin red, ~0,4 s."""
+    return cobertura.calcular(
+        cobertura.dias_en_base(con, conexion.ruta_silver(cfg.data_dir)),
+        cen.leer_manifiesto(conexion.ruta_bronze_cen(cfg.data_dir)),
+        hoy=_hoy(),
+    )
 
 
 def _fecha(texto: str) -> date:
@@ -114,19 +124,25 @@ def estado() -> None:
     base = conexion.ruta_silver(cfg.data_dir)
     if not leer.base_existe(base):
         typer.echo(f"La base esta vacia. Esperada en: {base}")
-        typer.echo("Corre primero:  cmg migrar")
+        typer.echo("Corre primero:  cmg migrar-historico <carpeta CMG_DB>")
         raise typer.Exit(SALIDA_ERROR)
 
     con = conexion.abrir(cfg.data_dir)
     try:
         res = leer.resumen_base(con, base)
+        cob = _cobertura(con, cfg)
     finally:
         con.close()
 
-    typer.echo(f"  periodo : {res['desde']} a {res['hasta']}  ({res['meses']} meses)")
-    typer.echo(f"  barras  : {res['barras']:,}")
-    typer.echo(f"  filas   : {res['filas']:,}")
-    typer.echo(f"  ruta    : {base}")
+    typer.echo(
+        f"  periodo   : {res['desde']} a {res['hasta']}  "
+        f"({res['meses_con_datos']} de {res['meses']} meses con datos)"
+    )
+    typer.echo(f"  barras    : {res['barras']:,}")
+    typer.echo(f"  filas     : {res['filas']:,}")
+    typer.echo(f"  ruta      : {base}")
+    for linea in cobertura.lineas_estado(cob):
+        typer.echo(linea)
 
 
 @app.command()
@@ -401,6 +417,13 @@ def vigilar_fuente(
     except ValueError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(SALIDA_ERROR) from e
+
+    # lo que solo Silver puede ver: huecos del Maestro y dias bajados sin ingerir
+    con = conexion.abrir(cfg.data_dir)
+    try:
+        hallazgos += cobertura.revisar(_cobertura(con, cfg))
+    finally:
+        con.close()
     _informar(hallazgos, cfg, "Vigilancia de la fuente")
 
 

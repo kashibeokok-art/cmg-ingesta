@@ -156,7 +156,7 @@ Gold (negocio).
 ## Desarrollar
 
 ```powershell
-uv run pytest          # 441 tests, ninguno toca la red
+uv run pytest          # 474 tests, ninguno toca la red
 uv run mypy            # tipado estricto
 uv run ruff check .    # linter
 uv run ruff format .   # formateo

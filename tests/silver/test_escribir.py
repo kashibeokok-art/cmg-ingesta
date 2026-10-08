@@ -1,6 +1,7 @@
 """Tests de la escritura particionada atomica."""
 
 import shutil
+import time
 from pathlib import Path
 
 import duckdb
@@ -136,3 +137,86 @@ def test_ruta_con_apostrofo_no_rompe_el_sql(con: duckdb.DuckDBPyConnection, tmp_
         assert escribir.filas_en_particion(con, raro, 2025, 3) == 4
     finally:
         shutil.rmtree(raro, ignore_errors=True)
+
+
+# ------------------------------------------- fallos al RENOMBRAR (errores B9)
+
+
+@pytest.fixture
+def renombre_que_falla(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
+    """Hace fallar `Path.replace` cuando la temporal pasa a ser el mes.
+
+    `veces` = cuantas veces falla antes de funcionar (99 = siempre). Es lo que
+    hacia el antivirus el 2026-10-08 al re-migrar 2021-10.
+    """
+    estado = {"veces": 99, "intentos": 0}
+    original = Path.replace
+
+    def replace(self: Path, destino: str | Path) -> Path:
+        if self.name.endswith(escribir.SUFIJO_TMP):
+            estado["intentos"] += 1
+            if estado["intentos"] <= estado["veces"]:
+                raise PermissionError(5, "Acceso denegado")
+        return original(self, destino)
+
+    monkeypatch.setattr(Path, "replace", replace)
+    monkeypatch.setattr(time, "sleep", lambda _s: None)
+    return estado
+
+
+def test_si_el_renombre_falla_el_mes_viejo_vuelve_a_su_lugar(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, renombre_que_falla: dict[str, int]
+) -> None:
+    renombre_que_falla["veces"] = 0
+    escribir.escribir_particion(con, consulta_falsa(10), tmp_path, 2025, 3)
+    renombre_que_falla.update(veces=99, intentos=0)
+
+    with pytest.raises(PermissionError):
+        escribir.escribir_particion(con, consulta_falsa(20), tmp_path, 2025, 3)
+
+    assert escribir.filas_en_particion(con, tmp_path, 2025, 3) == 10
+    viejo = escribir.ruta_particion(tmp_path, 2025, 3).with_name("mes=3" + escribir.SUFIJO_VIEJO)
+    assert not viejo.exists()
+
+
+def test_un_bloqueo_pasajero_se_reintenta(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, renombre_que_falla: dict[str, int]
+) -> None:
+    renombre_que_falla["veces"] = 2
+    assert escribir.escribir_particion(con, consulta_falsa(10), tmp_path, 2025, 3) == 10
+    assert renombre_que_falla["intentos"] == 3
+    assert escribir.filas_en_particion(con, tmp_path, 2025, 3) == 10
+
+
+def test_no_queda_el_mes_viejo_apartado_tras_el_exito(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
+    escribir.escribir_particion(con, consulta_falsa(10), tmp_path, 2025, 3)
+    escribir.escribir_particion(con, consulta_falsa(20), tmp_path, 2025, 3)
+    assert list(tmp_path.rglob(f"*{escribir.SUFIJO_VIEJO}")) == []
+    assert escribir.filas_en_particion(con, tmp_path, 2025, 3) == 20
+
+
+def test_limpiar_restaura_un_mes_viejo_si_el_mes_falta(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
+    """El proceso murio justo despues de apartar el mes viejo."""
+    escribir.escribir_particion(con, consulta_falsa(10), tmp_path, 2025, 3)
+    mes = escribir.ruta_particion(tmp_path, 2025, 3)
+    mes.replace(mes.with_name(mes.name + escribir.SUFIJO_VIEJO))
+
+    assert escribir.limpiar_temporales(tmp_path) == 1
+    assert escribir.filas_en_particion(con, tmp_path, 2025, 3) == 10
+
+
+def test_limpiar_borra_un_mes_viejo_que_sobra(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
+    """El proceso murio despues de poner el mes nuevo, antes de borrar el viejo."""
+    escribir.escribir_particion(con, consulta_falsa(10), tmp_path, 2025, 3)
+    mes = escribir.ruta_particion(tmp_path, 2025, 3)
+    shutil.copytree(mes, mes.with_name(mes.name + escribir.SUFIJO_VIEJO))
+
+    assert escribir.limpiar_temporales(tmp_path) == 1
+    assert list(tmp_path.rglob(f"*{escribir.SUFIJO_VIEJO}")) == []
+    assert escribir.filas_en_particion(con, tmp_path, 2025, 3) == 10

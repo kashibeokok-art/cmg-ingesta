@@ -329,3 +329,13 @@ def test_estado_corrupto_reingiere_todo(
     (tmp_path / "bronze" / ingerir_cen.ESTADO).write_text("{roto", encoding="utf-8")
     reporte, _ = correr(con, tmp_path)
     assert len(reporte) == 1
+
+
+def test_la_pagina_usa_los_mismos_nombres_que_el_historico(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, zip_cen: ArmarZipCen
+) -> None:
+    """Si la pagina volviera a publicar con Ñ, la serie no se parte."""
+    filas = leer_dia(
+        con, tmp_path, zip_cen, date(2026, 6, 15), "def", barras=("PEÑABLANCA____013",)
+    )
+    assert set(columnas(filas, "barra")) == {"PENABLANCA____013"}

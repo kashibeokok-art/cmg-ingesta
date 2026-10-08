@@ -480,7 +480,7 @@ HOY = date(2026, 10, 6)
 def test_rangos_agrupa_dias_consecutivos() -> None:
     d = date(2026, 1, 1)
     dias = [d, date(2026, 1, 3), date(2026, 1, 2), date(2026, 1, 7)]
-    assert deriva._rangos(dias) == [(d, date(2026, 1, 3)), (date(2026, 1, 7), date(2026, 1, 7))]
+    assert deriva.rangos(dias) == [(d, date(2026, 1, 3)), (date(2026, 1, 7), date(2026, 1, 7))]
 
 
 def test_completitud_todo_con_definitivo_no_avisa() -> None:
@@ -619,8 +619,15 @@ def test_vigilar_fuente_no_descarga_zip(tmp_path: Path) -> None:
     assert not any(p.endswith(".zip") for p in sesion.pedidos)
 
 
-def test_vigilar_fuente_revisa_la_completitud_de_todo_el_manifiesto(tmp_path: Path) -> None:
-    """Un hueco antiguo (fuera de los `dias` revisados en la web) igual se detecta."""
+def test_vigilar_fuente_revisa_la_completitud_desde_el_inicio_de_la_fuente(
+    tmp_path: Path,
+) -> None:
+    """Un hueco antiguo (fuera de los `dias` revisados en la web) igual se detecta, y
+    TAMBIEN el hueco anterior al primer archivo descargado.
+
+    REGRESION (2026-10-08): antes se medía desde el primer dia del manifiesto, asi que
+    2025-01-01..2026-01-09 no existia para el programa.
+    """
     m = manifiesto(entrada(date(2026, 1, 10)), entrada(date(2026, 1, 15)))
     cen.guardar_manifiesto(tmp_path, m)
     dia = date(2026, 1, 15)
@@ -629,7 +636,18 @@ def test_vigilar_fuente_revisa_la_completitud_de_todo_el_manifiesto(tmp_path: Pa
     )
     h = deriva.vigilar_fuente(sesion, tmp_path, hasta=dia, dias=1, pausa=1.0, hoy=HOY)
     sin_registro = [x for x in h if x["tipo"] == "dia_sin_registro"]
-    assert [x["evidencia"] for x in sin_registro] == ["2026-01-11 a 2026-01-14"]
+    assert [x["evidencia"] for x in sin_registro] == [
+        "2025-01-01 a 2026-01-09",
+        "2026-01-11 a 2026-01-14",
+    ]
+
+
+def test_vigilar_fuente_sin_nada_descargado_avisa_todo_el_hueco(tmp_path: Path) -> None:
+    """Con el manifiesto vacio antes no se revisaba la completitud en absoluto."""
+    sesion = SesionFalsa({cen.INDICE: html("indice_anios.html")})
+    h = deriva.vigilar_fuente(sesion, tmp_path, hasta=date(2025, 1, 10), dias=1, pausa=1.0, hoy=HOY)
+    sin_registro = [x["evidencia"] for x in h if x["tipo"] == "dia_sin_registro"]
+    assert sin_registro == ["2025-01-01 a 2025-01-10"]
 
 
 def test_sincronizar_vigilando_avisa_un_dia_que_el_cen_no_publico(tmp_path: Path) -> None:

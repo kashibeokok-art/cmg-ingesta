@@ -60,7 +60,14 @@ def barras(con: duckdb.DuckDBPyConnection, base: Path) -> list[str]:
 
 
 def resumen_base(con: duckdb.DuckDBPyConnection, base: Path) -> dict[str, object]:
-    """Un resumen para mostrar al arrancar: periodo, barras y filas."""
+    """Un resumen para mostrar al arrancar: periodo, barras y filas.
+
+    `meses` son los meses ENTRE el primero y el ultimo; `meses_con_datos`, los que
+    de verdad tienen datos. Antes solo estaba el primero, y una base con 21 meses
+    vacios en el medio se mostraba como "2021-01 a 2026-10 (70 meses)".
+    """
+    from cmg_ingesta.silver import escribir
+
     desde, hasta = rango_disponible(con, base)
     fila = con.execute(
         f"SELECT count(*), count(DISTINCT barra) FROM {sql_dataset(base)}"
@@ -71,6 +78,7 @@ def resumen_base(con: duckdb.DuckDBPyConnection, base: Path) -> dict[str, object
         "filas": int(fila[0]) if fila else 0,
         "barras": int(fila[1]) if fila else 0,
         "meses": len(periodo.meses_entre(desde, hasta)),
+        "meses_con_datos": len(escribir.meses_escritos(base)),
     }
 
 

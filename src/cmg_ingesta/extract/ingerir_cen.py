@@ -18,7 +18,6 @@ devuelve como datos.
 """
 
 import json
-import os
 import tempfile
 from collections.abc import Callable
 from datetime import date
@@ -82,7 +81,7 @@ def guardar_estado(bronze: Path, estado: dict[str, list[str]]) -> None:
     ruta = bronze / ESTADO
     tmp = ruta.with_suffix(".tmp")
     tmp.write_text(json.dumps(estado, indent=1, sort_keys=True), encoding="utf-8")
-    os.replace(tmp, ruta)
+    cen.reemplazar_atomico(tmp, ruta)
 
 
 def _clave(mes: Mes) -> str:

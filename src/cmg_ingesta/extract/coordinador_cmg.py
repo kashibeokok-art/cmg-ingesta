@@ -218,6 +218,25 @@ def leer_slugs(carpeta: Path) -> Slugs:
     return {int(k): str(v) for k, v in datos.get("slugs", {}).items()}
 
 
+def reemplazar_atomico(tmp: Path, ruta: Path, intentos: int = 5, espera: float = 0.2) -> None:
+    """`tmp` pasa a ser `ruta` de un golpe, reintentando si Windows lo bloquea.
+
+    En Windows, `os.replace` falla con `PermissionError` si otro proceso (el
+    antivirus, el indexador, OneDrive) tiene el archivo abierto en ese instante.
+    Se vio en un test el 2026-10-08. Dura milisegundos, asi que se reintenta unas
+    veces antes de rendirse. Si igual falla, la excepcion sube: el archivo viejo
+    sigue intacto, porque el reemplazo nunca llego a ocurrir.
+    """
+    for intento in range(intentos):
+        try:
+            tmp.replace(ruta)
+            return
+        except PermissionError:
+            if intento == intentos - 1:
+                raise
+            time.sleep(espera)
+
+
 def guardar_slugs(carpeta: Path, slugs: Slugs) -> Path:
     """Guarda los slugs con la fecha de consulta, de forma atomica."""
     carpeta.mkdir(parents=True, exist_ok=True)
@@ -228,7 +247,7 @@ def guardar_slugs(carpeta: Path, slugs: Slugs) -> Path:
         "slugs": {str(k): v for k, v in sorted(slugs.items())},
     }
     tmp.write_text(json.dumps(datos, indent=1, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(ruta)
+    reemplazar_atomico(tmp, ruta)
     return ruta
 
 
@@ -443,7 +462,7 @@ def guardar_manifiesto(carpeta: Path, manifiesto: dict[str, EntradaManifiesto]) 
         json.dumps(manifiesto, indent=1, ensure_ascii=False, sort_keys=True),
         encoding="utf-8",
     )
-    tmp.replace(ruta)
+    reemplazar_atomico(tmp, ruta)
     return ruta
 
 
@@ -565,18 +584,21 @@ def desde_sugerido(manifiesto: dict[str, EntradaManifiesto], ayer: date) -> date
     """Desde que dia conviene sincronizar para ponerse al dia sin rehacer todo.
 
     Es el menor entre:
-    - el dia siguiente al ultimo descargado (lo nuevo), y
+    - el PRIMER DIA SIN ARCHIVO desde el inicio de la fuente (un hueco), y
     - el primer dia que todavia solo tiene preliminar (puede haber llegado el def).
 
-    Con el manifiesto vacio es el inicio de la fuente: eso es el backfill completo.
+    "Lo nuevo" (el dia siguiente al ultimo descargado) es un caso del primero.
+
+    Antes solo miraba despues del ultimo dia descargado: con el manifiesto vacio
+    sugeria 2025-01-01, pero apenas se bajaban unos dias recientes pasaba a
+    sugerir esos dias, y el hueco anterior quedaba fuera para siempre.
+
     Nunca devuelve un dia posterior a `ayer`.
     """
-    if not manifiesto:
-        return INICIO_FUENTE
     tipos: dict[date, set[str]] = {}
     for e in manifiesto.values():
         dia = date.fromisoformat(e["fecha_operacion"])
         tipos.setdefault(dia, set()).add(e["tipo"])
-    solo_pre = [d for d, t in tipos.items() if "def" not in t]
-    candidatos = [max(tipos) + timedelta(days=1), *solo_pre]
-    return min(min(candidatos), ayer)
+    hueco = next((d for d in dias_entre(INICIO_FUENTE, ayer) if d not in tipos), ayer)
+    solo_pre = [d for d, t in tipos.items() if "def" not in t and d >= INICIO_FUENTE]
+    return min([hueco, *solo_pre, ayer])

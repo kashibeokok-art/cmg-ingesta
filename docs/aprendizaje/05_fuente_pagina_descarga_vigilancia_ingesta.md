@@ -251,6 +251,71 @@ Falla `test_los_dias_recientes_sin_archivo_no_avisan`: el día con exactamente 3
 de avisarse. Un `>` contra un `>=` es la diferencia entre avisar y no avisar, y solo un test con
 el borde exacto lo detecta.
 
+### 5b. El error que tuvo esta sección: medir lo esperado desde los datos
+
+La primera versión revisaba la completitud **desde el primer archivo descargado**. Parece
+razonable, y no lo es. El caso real (2026-10-08):
+
+```
+Silver:   2021-01-01 … 2024-12-31   +   2026-10-04, 05, 06
+                    ↑ 641 días sin nada ↑
+```
+
+- `vigilar_fuente` medía desde el 2026-10-04 (el primer día del manifiesto) → **0 hallazgos**.
+- El menú sugería descargar "desde el día siguiente al último" → **2026-10-04**.
+- `cmg estado` decía "2021-01 a 2026-10 (70 meses)": primero y último, sin mirar el medio.
+
+Al bajar días recientes, **el inicio de lo esperado se movía con ellos**, y el hueco anterior
+dejaba de existir. Es el mismo principio de la guía 03 (§2), *validar contra una expectativa*:
+si la expectativa sale del mismo dato que validas, no puede encontrarle nada.
+
+La corrección es un **contrato fijo**, en `quality/cobertura.py`:
+
+```python
+INICIO_BASE = date(2021, 1, 1)                          # inicio del Maestro
+hasta = hoy - timedelta(days=DIAS_GRACIA)               # lo que ya debería estar publicado
+esperados = dias_entre(INICIO_BASE, hasta)              # NO depende de lo que hay
+```
+
+Y cada día faltante se clasifica por **lo que hay que hacer** para recuperarlo:
+
+| Motivo | Cuándo | Qué hacer |
+|---|---|---|
+| `maestro` | antes de 2025 | `cmg migrar-historico` |
+| `sin_descargar` | desde 2025, sin ZIP | `cmg descargar-cen --desde … --hasta …` |
+| `sin_ingerir` | hay ZIP pero no está en Silver | `cmg ingerir-pagina` (o fue un crítico) |
+
+Ahora `cmg estado` lo muestra siempre, sin red, en ~0,4 s:
+
+```
+  periodo   : 2021-01 a 2026-10  (49 de 70 meses con datos)
+  cobertura : 1,463 de 2,104 dias esperados (2021-01-01 a 2026-10-05)
+  faltantes : 641 dia(s)
+     2025-01-01 a 2026-10-03    641 dia(s)  sin descargar
+  meses sin ningun dato : 21  (2025-01 a 2026-09)
+  meses incompletos     : 2026-10 (2/5 dias)
+```
+
+### 🔬 Caso práctico 4b — rómpelo
+
+En `coordinador_cmg.desde_sugerido`, vuelve a la idea original ("el día siguiente al último"):
+
+```python
+hueco = max(tipos, default=INICIO_FUENTE - timedelta(days=1)) + timedelta(days=1)
+```
+
+```powershell
+uv run pytest tests/extract/test_coordinador_cmg.py -q -k sugerido
+```
+
+Fallan `test_desde_sugerido_no_olvida_el_hueco_al_bajar_dias_recientes` (tu caso real) y
+`test_desde_sugerido_vuelve_a_un_hueco_en_medio`.
+
+**Lección extra:** los tests de la primera versión **fijaban el error**: armaban un manifiesto
+con hueco y esperaban que se ignorara. Un test confirma lo que tú creías que era correcto; si la
+creencia está mal, el test también. Por eso un escenario "con hueco" debe esperar que el hueco
+**se vea**.
+
 ---
 
 ## 6. M5: la trampa de los ceros

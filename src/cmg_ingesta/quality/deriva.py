@@ -608,21 +608,21 @@ DIAS_GRACIA = 3
 DIAS_MAX_PRE = 15
 
 
-def _rangos(dias: list[date]) -> list[tuple[date, date]]:
+def rangos(dias: list[date]) -> list[tuple[date, date]]:
     """Agrupa dias en rangos consecutivos: [1,2,3,7,8] -> [(1,3), (7,8)].
 
     Sirve para que un hueco de un mes sea UN hallazgo y no treinta.
     """
-    rangos: list[tuple[date, date]] = []
+    grupos: list[tuple[date, date]] = []
     for d in sorted(dias):
-        if rangos and d - rangos[-1][1] == timedelta(days=1):
-            rangos[-1] = (rangos[-1][0], d)
+        if grupos and d - grupos[-1][1] == timedelta(days=1):
+            grupos[-1] = (grupos[-1][0], d)
         else:
-            rangos.append((d, d))
-    return rangos
+            grupos.append((d, d))
+    return grupos
 
 
-def _texto_rango(inicio: date, fin: date) -> str:
+def texto_rango(inicio: date, fin: date) -> str:
     return str(inicio) if inicio == fin else f"{inicio} a {fin}"
 
 
@@ -664,20 +664,20 @@ def revisar_completitud(
             solo_pre.append(dia)
 
     hallazgos: list[Hallazgo] = []
-    for inicio, fin in _rangos(sin_registro):
+    for inicio, fin in rangos(sin_registro):
         n = (fin - inicio).days + 1
         hallazgos.append(
             _h(
                 "aviso",
                 "dia_sin_registro",
                 f"{n} dia(s) sin ningun archivo descargado.",
-                _texto_rango(inicio, fin),
+                texto_rango(inicio, fin),
                 f"Correr `cmg descargar-cen --desde {inicio} --hasta {fin}`. Si la "
                 "pagina del dia sigue sin documentos, revisar a mano en el sitio: puede "
                 "ser un dia que el CEN no publico o que movio de seccion.",
             )
         )
-    for inicio, fin in _rangos(solo_pre):
+    for inicio, fin in rangos(solo_pre):
         n = (fin - inicio).days + 1
         edad = (hoy - inicio).days
         hallazgos.append(
@@ -686,7 +686,7 @@ def revisar_completitud(
                 "pre_sin_definitivo",
                 f"{n} dia(s) siguen solo con el preliminar; el mas antiguo lleva "
                 f"{edad} dias. El CEN suele publicar el definitivo en 7 a 10 dias.",
-                _texto_rango(inicio, fin),
+                texto_rango(inicio, fin),
                 f"Correr `cmg descargar-cen --desde {inicio} --hasta {fin}`, que vuelve "
                 "a visitar las paginas. Si sigue sin definitivo, revision manual: puede "
                 "haber una discrepancia en tramite ante el Panel de Expertos.",
@@ -769,8 +769,11 @@ def vigilar_fuente(
     2. Revisa las paginas de los ultimos `dias` dias.
     3. Re-inspecciona el ZIP mas reciente que ya este en `carpeta`.
     4. Avisa si no hubo publicaciones en todo el periodo (frescura).
-    5. Revisa la completitud de TODO lo descargado: dias sin archivo y
-       preliminares que llevan demasiado sin definitivo.
+    5. Revisa la completitud desde el INICIO DE LA FUENTE (2025-01-01), no desde
+       el primer archivo descargado: dias sin archivo y preliminares viejos.
+
+    Lo esperado es fijo. Si se midiera desde lo descargado, bajar solo los dias
+    recientes correria el inicio y todo el hueco anterior dejaria de existir.
     """
     if pausa < cen.PAUSA_MINIMA:
         raise ValueError(f"pausa={pausa} es menor que el minimo {cen.PAUSA_MINIMA}s.")
@@ -807,8 +810,8 @@ def vigilar_fuente(
         ruta = carpeta / ultimo["nombre"]
         if ruta.exists():
             hallazgos += revisar_zip(ruta, date.fromisoformat(ultimo["fecha_operacion"]))
-        primero = date.fromisoformat(min(e["fecha_operacion"] for e in manifiesto.values()))
-        hallazgos += revisar_completitud(manifiesto, primero, hasta, hoy or date.today())
+    # tambien con el manifiesto vacio: no haber bajado nada es el hueco mas grande
+    hallazgos += revisar_completitud(manifiesto, cen.INICIO_FUENTE, hasta, hoy or date.today())
     return hallazgos
 
 

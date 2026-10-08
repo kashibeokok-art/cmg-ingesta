@@ -16,6 +16,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
+from cmg_ingesta.config import Settings
 from cmg_ingesta.domain import bloques
 from cmg_ingesta.quality import deriva
 from cmg_ingesta.silver import escribir
@@ -25,6 +26,17 @@ from cmg_ingesta.silver import escribir
 VALORES_BLOQUE = {"A": 100.0, "B": 10.0, "C": 200.0}
 
 Sembrar = Callable[..., None]
+
+
+@pytest.fixture(autouse=True)
+def sin_env_del_proyecto(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ningun test lee el `.env` real del proyecto (tiene la clave y la ruta de datos real).
+
+    `autouse=True` la aplica a TODOS los tests sin que la pidan. Antes bastaba con
+    cambiar de carpeta, porque el `.env` se buscaba en la carpeta actual; ahora se
+    busca en la del proyecto, asi que hay que apagarlo explicitamente.
+    """
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
 
 
 @pytest.fixture

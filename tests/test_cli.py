@@ -49,7 +49,7 @@ def test_estado_sin_base_falla_y_explica(entorno: Path) -> None:
     r = runner.invoke(cli.app, ["estado"])
     assert r.exit_code == cli.SALIDA_ERROR
     assert "vacia" in r.stdout
-    assert "cmg migrar" in r.stdout
+    assert "cmg migrar-historico" in r.stdout
 
 
 def test_estado_con_base(con_base: Path) -> None:
@@ -57,6 +57,22 @@ def test_estado_con_base(con_base: Path) -> None:
     assert r.exit_code == cli.SALIDA_OK
     assert "2024-06" in r.stdout
     assert "2024-07" in r.stdout
+
+
+def test_estado_muestra_los_dias_y_meses_que_faltan(
+    con_base: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """REGRESION (2026-10-08): `estado` decia el periodo de punta a punta y callaba los huecos.
+
+    `con_base` tiene un solo dia de junio y uno de julio de 2024.
+    """
+    monkeypatch.setattr(cli, "_hoy", lambda: date(2024, 8, 4))  # se espera hasta el 2024-08-01
+    r = runner.invoke(cli.app, ["estado"])
+    assert r.exit_code == cli.SALIDA_OK
+    assert "(2 de 2 meses con datos)" in r.stdout
+    assert "faltantes" in r.stdout and "del Maestro" in r.stdout
+    assert "2024-06-02 a 2024-06-30" in r.stdout
+    assert "meses sin ningun dato" in r.stdout  # 2021-01 .. 2024-05 y 2024-08
 
 
 # ----------------------------------------------------------------- barras

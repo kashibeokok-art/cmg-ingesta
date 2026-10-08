@@ -31,6 +31,18 @@ def test_resumen_base(con: duckdb.DuckDBPyConnection, tmp_path: Path, sembrar: S
     assert res["hasta"] == "2024-07"
     assert res["filas"] == 2 * 96
     assert res["barras"] == 1
+    assert res["meses"] == res["meses_con_datos"] == 2
+
+
+def test_resumen_base_distingue_los_meses_vacios(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, sembrar: Sembrar
+) -> None:
+    """REGRESION: con un hueco en el medio decia '70 meses' teniendo 49."""
+    sembrar(con, tmp_path, 2024, 1, "BARRA_1", VALORES)
+    sembrar(con, tmp_path, 2024, 12, "BARRA_1", VALORES)
+    res = leer.resumen_base(con, tmp_path)
+    assert res["meses"] == 12
+    assert res["meses_con_datos"] == 2
 
 
 def test_base_vacia_falla(con: duckdb.DuckDBPyConnection, tmp_path: Path, sembrar: Sembrar) -> None:

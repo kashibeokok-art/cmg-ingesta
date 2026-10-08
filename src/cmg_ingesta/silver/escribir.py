@@ -6,17 +6,23 @@ NO puede quedar a medias. La base antigua de retiros tenia ese bug (carga con
 mes quedaba incompleto y la verificacion "¿existe ese mes?" lo saltaba para
 siempre.
 
-La solucion, que la base de CMg ya tenia bien y aqui se conserva:
+La solucion:
 
-    1. escribir TODO el mes en una carpeta temporal  (<destino>__tmp)
-    2. recien entonces borrar el destino viejo
-    3. mover la temporal a su lugar con os.replace
+    1. escribir TODO el mes en una carpeta temporal       (<destino>__tmp)
+    2. apartar el mes viejo, renombrandolo               (<destino>__old)
+    3. poner la temporal en su lugar, renombrandola
+    4. recien ahora borrar el mes viejo
 
-Si el proceso muere en el paso 1, el destino viejo sigue intacto y la temporal
-queda huerfana (se limpia sola en la siguiente corrida).
+En ningun momento el mes queda sin datos: si falla el paso 3, el viejo vuelve a su
+lugar. Una version anterior borraba el viejo y DESPUES renombraba; en Windows el
+renombre fallo (antivirus/indexador) y el mes quedo vacio (errores_verificados B9).
+
+Si el proceso muere entre pasos, `limpiar_temporales` lo arregla en la siguiente
+corrida: borra las `__tmp` y devuelve a su lugar un `__old` cuyo mes falte.
 """
 
 import shutil
+import time
 from pathlib import Path
 
 import duckdb
@@ -24,6 +30,7 @@ import duckdb
 from cmg_ingesta.domain import esquema
 
 SUFIJO_TMP = "__tmp"
+SUFIJO_VIEJO = "__old"
 NOMBRE_ARCHIVO = "data.parquet"
 
 
@@ -48,18 +55,48 @@ def filas_en_particion(con: duckdb.DuckDBPyConnection, base: Path, anio: int, me
 
 
 def limpiar_temporales(base: Path) -> int:
-    """Borra las carpetas __tmp que quedaron de una corrida interrumpida.
+    """Arregla lo que dejo una corrida interrumpida. Devuelve cuantas carpetas toco.
 
-    Se llama al inicio de cada ingesta. Devuelve cuantas borro.
+    - `__tmp`: escritura a medias, se borra.
+    - `__old`: el mes viejo apartado. Si el mes falta, vuelve a su lugar (el proceso
+      murio entre los renombres); si el mes esta, sobra y se borra.
+
+    Se llama al inicio de cada ingesta.
     """
     if not base.is_dir():
         return 0
-    borradas = 0
-    for carpeta in base.rglob(f"*{SUFIJO_TMP}"):
+    tocadas = 0
+    for carpeta in list(base.rglob(f"*{SUFIJO_TMP}")):
         if carpeta.is_dir():
             shutil.rmtree(carpeta, ignore_errors=True)
-            borradas += 1
-    return borradas
+            tocadas += 1
+    for carpeta in list(base.rglob(f"*{SUFIJO_VIEJO}")):
+        if not carpeta.is_dir():
+            continue
+        mes = carpeta.with_name(carpeta.name.removesuffix(SUFIJO_VIEJO))
+        if mes.is_dir():
+            shutil.rmtree(carpeta, ignore_errors=True)
+        else:
+            _renombrar(carpeta, mes)
+        tocadas += 1
+    return tocadas
+
+
+def _renombrar(origen: Path, destino: Path, intentos: int = 10, espera: float = 0.3) -> None:
+    """Renombra una carpeta, reintentando si Windows la tiene bloqueada.
+
+    El `PermissionError` lo provoca otro proceso (antivirus, indexador, OneDrive)
+    que tiene un archivo abierto ese instante. Dura poco: se espera un poco mas en
+    cada intento. Si igual falla, la excepcion sube.
+    """
+    for intento in range(intentos):
+        try:
+            origen.replace(destino)
+            return
+        except PermissionError:
+            if intento == intentos - 1:
+                raise
+            time.sleep(espera * (intento + 1))
 
 
 def escribir_particion(
@@ -98,11 +135,19 @@ def escribir_particion(
     ).fetchone()
     escritas = int(fila[0]) if fila else 0
 
-    # 3. recien ahora se reemplaza
-    if destino.is_dir():
-        shutil.rmtree(destino)
+    # 3. intercambio: el mes nunca queda sin datos
+    viejo = destino.with_name(destino.name + SUFIJO_VIEJO)
+    shutil.rmtree(viejo, ignore_errors=True)
     destino.parent.mkdir(parents=True, exist_ok=True)
-    tmp.replace(destino)
+    if destino.is_dir():
+        _renombrar(destino, viejo)  # si falla, el destino sigue intacto
+    try:
+        _renombrar(tmp, destino)
+    except OSError:
+        if viejo.is_dir():
+            _renombrar(viejo, destino)  # se devuelve el mes viejo
+        raise
+    shutil.rmtree(viejo, ignore_errors=True)
     return escritas
 
 

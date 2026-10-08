@@ -25,6 +25,7 @@ def crear_cmg_db_falso(
     base: Path,
     meses: list[tuple[int, int]],
     horas: list[int] | None = None,
+    barra: str = "BARRA_X",
 ) -> None:
     """Escribe un CMG_DB de juguete: 1 barra, el dia 1 de cada mes, 4 cuartos/hora.
 
@@ -38,7 +39,7 @@ def crear_cmg_db_falso(
         destino = str(carpeta / "data.parquet").replace("'", "''")
         con.execute(f"""
             COPY (
-                SELECT 'BARRA_X' AS barra,
+                SELECT '{barra}' AS barra,
                        DATE '{anio}-{mes:02d}-01' AS fecha,
                        CAST(h AS UTINYINT) AS hora,
                        CAST(m AS UTINYINT) AS minuto,
@@ -198,3 +199,19 @@ def test_migracion_limpia_temporales_huerfanas(
 
     assert not huerfana.exists()
     assert any("temporal" in a for a in avisos)
+
+
+def test_la_migracion_unifica_las_barras_renombradas(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
+    """PEÑABLANCA hasta 2023-05 y PENABLANCA desde 2023-06 quedan como UNA barra."""
+    origen = tmp_path / "CMG_DB"
+    crear_cmg_db_falso(con, origen, [(2023, 5)], barra="PEÑABLANCA____013")
+    crear_cmg_db_falso(con, origen, [(2023, 6)], barra="PENABLANCA____013")
+    destino = tmp_path / "silver"
+    migrar.migrar_historico(con, origen, destino)
+
+    filas = con.execute(
+        f"SELECT DISTINCT barra FROM read_parquet('{destino.as_posix()}/**/*.parquet')"
+    ).fetchall()
+    assert filas == [("PENABLANCA____013",)]

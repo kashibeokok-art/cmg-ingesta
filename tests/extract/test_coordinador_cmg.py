@@ -470,26 +470,81 @@ def _manifiesto(*entradas: cen.EntradaManifiesto) -> dict[str, cen.EntradaManifi
 AYER = date(2026, 10, 6)
 
 
+def _completo_hasta(ultimo: str, tipo: str = "def") -> dict[str, cen.EntradaManifiesto]:
+    """Un manifiesto sin huecos desde el inicio de la fuente hasta `ultimo`."""
+    dias = cen.dias_entre(cen.INICIO_FUENTE, date.fromisoformat(ultimo))
+    return _manifiesto(*(_entrada(d.isoformat(), tipo) for d in dias))
+
+
 def test_desde_sugerido_sin_nada_descargado_es_el_backfill() -> None:
     assert cen.desde_sugerido({}, AYER) == cen.INICIO_FUENTE == date(2025, 1, 1)
 
 
 def test_desde_sugerido_sigue_despues_del_ultimo_dia() -> None:
-    m = _manifiesto(_entrada("2026-09-29", "def"), _entrada("2026-09-30", "def"))
+    m = _completo_hasta("2026-09-30")
     assert cen.desde_sugerido(m, AYER) == date(2026, 10, 1)
+
+
+def test_desde_sugerido_no_olvida_el_hueco_al_bajar_dias_recientes() -> None:
+    """REGRESION (reportado por el usuario 2026-10-08): con solo 10-04..10-06 bajados,
+    sugeria 10-04 y el hueco 2025-01-01..2026-10-03 quedaba fuera para siempre."""
+    m = _manifiesto(*(_entrada(f"2026-10-0{d}", "def") for d in (4, 5, 6)))
+    assert cen.desde_sugerido(m, AYER) == date(2025, 1, 1)
+
+
+def test_desde_sugerido_vuelve_a_un_hueco_en_medio() -> None:
+    m = _completo_hasta("2026-10-06")
+    del m["def_2025-06-15.zip"]
+    assert cen.desde_sugerido(m, AYER) == date(2025, 6, 15)
 
 
 def test_desde_sugerido_vuelve_al_primer_dia_que_sigue_en_pre() -> None:
     """El def de un dia en pre puede haber llegado: hay que volver a mirarlo."""
-    m = _manifiesto(
-        _entrada("2026-09-20", "pre"),
-        _entrada("2026-09-25", "pre"),
-        _entrada("2026-09-25", "def"),  # este ya tiene definitivo
-        _entrada("2026-09-30", "def"),
-    )
+    m = _completo_hasta("2026-09-30")
+    m |= _manifiesto(_entrada("2026-09-20", "pre"))
+    del m["def_2026-09-20.zip"]
     assert cen.desde_sugerido(m, AYER) == date(2026, 9, 20)
 
 
 def test_desde_sugerido_nunca_pasa_de_ayer() -> None:
-    m = _manifiesto(_entrada("2026-10-06", "def"))
+    m = _completo_hasta("2026-10-06")
     assert cen.desde_sugerido(m, AYER) == AYER
+
+
+# ------------------------------------------------------- reemplazar_atomico
+
+
+def test_reemplazar_atomico_reintenta_si_windows_bloquea(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Se vio el 2026-10-08: PermissionError intermitente al reemplazar el manifiesto."""
+    tmp, ruta = tmp_path / "a.tmp", tmp_path / "a.json"
+    tmp.write_text("nuevo", encoding="utf-8")
+    ruta.write_text("viejo", encoding="utf-8")
+    real = Path.replace
+    fallos = iter([True, True, False])
+
+    def replace_inestable(self: Path, destino: Path) -> Path:
+        if next(fallos):
+            raise PermissionError("bloqueado por otro proceso")
+        return real(self, destino)
+
+    monkeypatch.setattr(Path, "replace", replace_inestable)
+    cen.reemplazar_atomico(tmp, ruta, espera=0)
+    assert ruta.read_text(encoding="utf-8") == "nuevo"
+
+
+def test_reemplazar_atomico_se_rinde_y_deja_el_archivo_viejo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tmp, ruta = tmp_path / "a.tmp", tmp_path / "a.json"
+    tmp.write_text("nuevo", encoding="utf-8")
+    ruta.write_text("viejo", encoding="utf-8")
+
+    def siempre_bloqueado(self: Path, destino: Path) -> Path:
+        raise PermissionError("bloqueado")
+
+    monkeypatch.setattr(Path, "replace", siempre_bloqueado)
+    with pytest.raises(PermissionError):
+        cen.reemplazar_atomico(tmp, ruta, intentos=3, espera=0)
+    assert ruta.read_text(encoding="utf-8") == "viejo"

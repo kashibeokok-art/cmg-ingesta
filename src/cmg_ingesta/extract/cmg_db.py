@@ -10,7 +10,9 @@ Que hace la migracion, ademas de copiar:
 2. **Agrega `es_hora_extra`** y pone `fecha_hora` en NULL ahi, en vez del dia
    siguiente a las 00:00 que calculaba la base vieja.
 3. **Agrega linaje** (`origen`, `ingerido_en`), que `CMG_DB` no tiene.
-4. **Valida contra el calendario** y reporta lo que no calza, sin corregirlo.
+4. **Unifica las barras que cambiaron de nombre** (`domain/barras.py`): las 20
+   que hasta 2023-05 se escribian con Ñ quedan con su nombre actual, sin Ñ.
+5. **Valida contra el calendario** y reporta lo que no calza, sin corregirlo.
 
 Limitacion heredada que hay que tener presente: `CMG_DB` guardo el CMg en FLOAT de
 32 bits, asi que trae valores como 49.10531997680664 donde la fuente decia
@@ -22,7 +24,7 @@ import calendar as calendario_py
 from datetime import date
 from pathlib import Path
 
-from cmg_ingesta.domain import bloques, calendario, esquema, periodo
+from cmg_ingesta.domain import barras, bloques, calendario, esquema, periodo
 from cmg_ingesta.domain.periodo import Mes
 
 #: El tramo del Maestro. Mas alla de esto, CMG_DB mezcla fuentes descartadas.
@@ -49,7 +51,7 @@ def sql_desde_cmg_db(base: Path, anio: int, mes: int) -> str:
     patron = _lit(ruta_mes(base, anio, mes) / "*.parquet")
     return f"""
         SELECT
-            barra,
+            {barras.sql_canonico()} AS barra,
             fecha,
             CAST(hora AS UTINYINT) AS hora,
             CAST(minuto AS UTINYINT) AS minuto,

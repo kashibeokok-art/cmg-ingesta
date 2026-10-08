@@ -125,6 +125,44 @@ y `PPA_` en `ppa-pipeline`. Si una entrada aplica solo a un proyecto, decirlo ex
   "obvias" fallan, y una falsa alarma crítica en el día DST es exactamente lo que hace que un
   vigilante se ignore.
 
+### A10. Una ruta relativa en la configuración depende de desde dónde se ejecuta
+- **Error:** dejé `data_dir: Path = Path("data")` y `env_file=".env"`, ambos **relativos a la
+  carpeta actual**. Todos los tests pasaban porque siempre corrían desde la carpeta del proyecto
+  (o hacían `chdir` a un temporal).
+- **Evidencia (2026-10-08):** el usuario corrió `uv run cmg` y "no reconoce los datos". Desde
+  `cmg-ingesta\` → 201.810.260 filas; desde `Scripts\` → "La base esta vacia. Esperada en:
+  data\silver\cmg". Desde otra carpeta **ni siquiera se leía el `.env`**.
+- **Corrección:** `RAIZ_PROYECTO = Path(__file__).resolve().parents[2]` (válido porque `uv sync`
+  instala en modo editable); `env_file = RAIZ_PROYECTO / ".env"`; un `field_validator` cuelga de la
+  raíz toda ruta relativa y respeta las absolutas. Verificado desde 3 carpetas distintas.
+- **Efecto colateral que hubo que cubrir:** con el `.env` anclado al proyecto, cambiar de carpeta
+  **ya no aislaba** los tests del `.env` real (que tiene la clave). Se apagó para todos con una
+  fixture `autouse` en `conftest.py`.
+- **Lección:** cualquier ruta que lea un programa de línea de comandos hay que probarla
+  **ejecutando desde otra carpeta**. Un test que siempre corre desde la raíz no puede detectarlo.
+  En `ppa-pipeline` aplica igual a `Settings`.
+
+### A11. Calcular "lo esperado" a partir de lo que ya hay esconde los huecos
+- **Error:** tres lugares medían la completitud contra los propios datos:
+  `vigilar_fuente` revisaba desde el **primer día del manifiesto** (y con el manifiesto vacío no
+  revisaba nada); `desde_sugerido` sugería desde el **día siguiente al último descargado**; y
+  `cmg estado` mostraba **primer y último mes** ("2021-01 a 2026-10 (70 meses)").
+- **Evidencia (2026-10-08):** el usuario bajó solo 2026-10-04..06. Silver quedó con 2021–2024 +
+  esos 3 días. `vigilar_fuente` → **0 hallazgos**; el menú sugería **2026-10-04**; `estado`
+  decía 70 meses teniendo 49. Los 641 días de 2025-01-01 a 2026-10-03 no existían para el programa.
+  El reporte del usuario: "al añadir días recientes deja de saber que hay días que faltan".
+- **Agravante:** los tests que escribí **fijaban el error**: armaban manifiestos con un hueco
+  desde 2025 y esperaban que se ignorara (`test_desde_sugerido_sigue_despues_del_ultimo_dia`,
+  `test_vigilar_fuente_revisa_la_completitud_de_todo_el_manifiesto`).
+- **Corrección:** el rango esperado es un **contrato fijo** (2021-01-01 → hoy − 3 días; la
+  página desde `INICIO_FUENTE`), nunca derivado de los datos. `quality/cobertura.py` lo mide en
+  Silver y clasifica cada día faltante (maestro / sin descargar / sin ingerir). Regresión con el
+  caso real en `test_cobertura.py::test_el_caso_real_del_usuario`.
+- **Lección:** una validación de completitud necesita una expectativa **independiente** del
+  dato que valida. Es el mismo principio de §3 de la guía 03 ("validar contra una expectativa"),
+  que yo mismo había documentado, aplicado al calendario de días en vez de al de cuartos. Y un
+  test que arma el escenario "con hueco" debe esperar que el hueco **se vea**.
+
 ---
 
 ## B. Procesamiento de datos (del código que se está portando)
@@ -191,6 +229,24 @@ y `PPA_` en `ppa-pipeline`. Si una entrada aplica solo a un proyecto, decirlo ex
 - **Lección:** un patrón `[A-Z]` en español es un bug esperando datos. Al portar, probar con
   nombres reales que tengan Ñ y tildes, no solo con los de los tests sintéticos.
 
+
+### B9. "Borrar el viejo y después renombrar el nuevo" no es atómico
+- **Error:** en `silver/escribir.py: escribir_particion` (sesión 2) el paso final era
+  `shutil.rmtree(destino)` y luego `tmp.replace(destino)`, y el docstring lo llamaba "atómico".
+  Entre las dos líneas el mes **no existe**; si el renombre falla, queda sin datos.
+- **Evidencia (2026-10-08):** al re-migrar el histórico, `os.replace` falló en `2021-10` con
+  `PermissionError: [WinError 5] Acceso denegado` (antivirus/indexador, el mismo fenómeno que la
+  sesión 5 vio en el manifiesto). Resultado: `anio=2021/mes=10` borrado y `mes=10__tmp` con los
+  datos. No se perdió nada solo porque la temporal estaba completa y la migración es re-ejecutable.
+- **Por qué los tests no lo vieron:** `test_un_fallo_deja_intacto_el_mes_anterior` simulaba un
+  fallo **al escribir** la temporal (paso 1), nunca **al renombrar** (paso 3).
+- **Corrección:** intercambio en tres renombres: `destino → destino__old`, `tmp → destino`, y
+  recién al final se borra `__old`. Si el segundo renombre falla, `__old` vuelve a su lugar. Cada
+  renombre reintenta ante `PermissionError`. `limpiar_temporales` restaura un `__old` huérfano si
+  el mes falta (proceso muerto justo entre dos renombres).
+- **Lección:** "atómico" se prueba inyectando el fallo **en cada paso**, no solo en el primero.
+  En Windows un renombre puede fallar por un proceso ajeno, así que el paso que "no puede fallar"
+  es justamente el que hay que simular.
 ---
 
 ## C. Método de trabajo

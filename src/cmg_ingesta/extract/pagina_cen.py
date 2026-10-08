@@ -17,6 +17,8 @@ con estas reglas verificadas sobre archivos reales (CLAUDE.md 4.5):
    descarta: esa hora no existio.
 4. **El estado queda en el linaje**: `origen` es `pagina_cen_def` o
    `pagina_cen_pre`, asi un exporte dice si trae datos preliminares.
+5. **Mismos nombres de barra que el historico** (`domain/barras.py`). Hoy la
+   pagina ya publica el nombre oficial; se aplica igual, por si vuelve una Ñ.
 """
 
 import re
@@ -24,11 +26,11 @@ import zipfile
 from datetime import date
 from pathlib import Path
 
-from cmg_ingesta.domain import bloques, calendario, esquema
+from cmg_ingesta.domain import barras, bloques, calendario, esquema
 from cmg_ingesta.extract import coordinador_cmg as cen
 
 #: Desde aqui manda la pagina. Antes, el Maestro.
-PRIMER_DIA = date(2025, 1, 1)
+PRIMER_DIA = cen.INICIO_FUENTE
 
 RE_COMPARATIVO = re.compile(r"CmgBarrasComparativo_\d{8}_\d{8}_15\.csv$", re.I)
 
@@ -115,7 +117,7 @@ def sql_un_dia(csv: Path, dia: date, tipo: str) -> str:
     fantasma = calendario.horas_inexistentes(dia)
     filtro = f"WHERE hora NOT IN ({', '.join(map(str, fantasma))})" if fantasma else ""
     return f"""
-        SELECT barra, fecha, hora, minuto,
+        SELECT {barras.sql_canonico()} AS barra, fecha, hora, minuto,
                CAST({bloques.sql_bloque()} AS VARCHAR) AS bloque,
                cmg_usd_mwh,
                (hora = {calendario.HORA_EXTRA}) AS es_hora_extra,

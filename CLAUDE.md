@@ -54,7 +54,7 @@ Modo mentor (§2): Claude diseña, explica y revisa; **el usuario escribe el có
 | **M5** | **Ingesta de (b) a Silver** (`extract/{pagina_cen,ingerir_cen}.py`) | ✅ 2026-10-06 |
 | **M8** | **Menú interactivo** (`menu/{busqueda,consola,app}.py`), estilo `CMG_Portable` | ✅ 2026-10-07 |
 
-**441 tests · `mypy --strict` limpio · `ruff` limpio.**
+**474 tests · `mypy --strict` limpio · `ruff` limpio.**
 
 **Uso diario:** `uv run cmg` sin argumentos abre el menú. Los comandos siguen para automatizar.
 
@@ -754,8 +754,40 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho
   completo desde sus ZIP; no hay modo "combinar". Idempotente por construcción.
 - **ADR-H07 · 2026-10-06 · Pre/def en `origen`, no en una columna nueva.** No obliga a reescribir
   los 201,8 M de filas migradas ni a leer con `union_by_name`.
+- **ADR-H08 · 2026-10-08 · Barras renombradas: tabla explícita, nombre actual sin Ñ.**
+  `domain/barras.py: RENOMBRES` (20 pares) se aplica al mapear **las dos fuentes** al esquema
+  canónico, como `sql_bloque`. Lista explícita y no la regla "Ñ → N": una barra nueva con Ñ se
+  revisa antes de unirla (criterio de ADR-H05). Nombre oficial = el que publica hoy la página, así
+  lo nuevo no se toca. Excepción acotada a la regla "no se normaliza nada" de §0.6, decidida por
+  el usuario.
 
 ## 8. Bitácora
+
+### 2026-10-08 — Sesión 5b: barras renombradas (sesión paralela a la 5)
+- El usuario confirmó que `PEÑABLANCA` y `PENABLANCA` son la misma barra. Al revisar apareció
+  que el cambio es **sistemático**: 20 barras (CAÑETE, CHAPIQUIÑA, CHAÑARAL, DEGAÑ, HUALAÑE,
+  LASARAÑAS, PEÑABLANCA, PIÑATAS, REÑACA, TAP.REÑACA, TAP_CHAÑARES) se escriben con Ñ hasta
+  2023-05 y sin Ñ desde 2023-06 (LASARAÑAS: hasta 2024-06), **sin un solo intervalo
+  superpuesto**. El usuario eligió unificar las 20 con el nombre sin Ñ (ADR-H08).
+- **Re-migración real:** 201.810.260 filas (igual que M3), mismos 10 días DST y 23.152 filas
+  fantasma reportados. Las 20 barras quedan con 48 meses y 140.272 filas cada una
+  (1.461 × 96 + 16 de los 4 abriles), 0 duplicados, 0 barras con Ñ.
+- **Bug encontrado al re-migrar (→ B9):** `escribir_particion` borraba el mes viejo antes de
+  renombrar el nuevo; un `PermissionError` de Windows en 2021-10 dejó el mes vacío (sin pérdida:
+  la temporal estaba completa). Ahora es un intercambio de tres renombres con reintentos, y
+  `limpiar_temporales` restaura un `__old` huérfano. 5 tests con el fallo inyectado en el renombre.
+
+### 2026-10-08 — Sesión 5: rutas y cobertura
+- **Rutas ancladas al proyecto** (`config.RAIZ_PROYECTO`): `cmg` desde otra carpeta decía que la
+  base estaba vacía y no leía el `.env` (→ A10).
+- **Cobertura con expectativa fija** (`quality/cobertura.py`): el usuario reportó que el programa
+  no registraba días/meses sin datos y que al bajar días recientes "olvidaba" el hueco. Tres
+  causas, todas por medir lo esperado desde los propios datos (→ A11): `vigilar_fuente`,
+  `desde_sugerido` y `cmg estado`. Ahora: esperado = 2021-01-01 → hoy − 3 días.
+- Estado real tras el arreglo: 1.463 de 2.104 días; faltan **641** (2025-01-01 → 2026-10-03,
+  sin descargar); 21 meses vacíos; Maestro completo. Sigue pendiente el backfill (§0.5).
+- `reemplazar_atomico` con reintentos: `PermissionError` intermitente de Windows al reemplazar
+  el manifiesto (antivirus/indexador), visto en un test.
 
 ### 2026-10-07 — Sesión 4: menú interactivo
 - **AMEBA:** fuera por ahora, no descartada (§0.3).

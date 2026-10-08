@@ -38,7 +38,7 @@ from cmg_ingesta.menu.consola import (
     pedir_formatos,
     pedir_periodo,
 )
-from cmg_ingesta.quality import deriva
+from cmg_ingesta.quality import cobertura, deriva
 from cmg_ingesta.reportes import exportar
 from cmg_ingesta.reportes.exportar import Formato
 from cmg_ingesta.silver import leer
@@ -86,20 +86,30 @@ class Contexto:
 def estado_base(ctx: Contexto) -> list[str]:
     """Las lineas de estado de la cabecera. Rapido: Parquet guarda los conteos."""
     lineas: list[str] = []
+    manifiesto = cen.leer_manifiesto(ctx.bronze_cen)
     if leer.base_existe(ctx.silver):
         con = ctx.abrir()
         try:
             r = leer.resumen_base(con, ctx.silver)
+            cob = _cobertura(ctx, con, manifiesto)
         finally:
             con.close()
         lineas.append(
             f"  Base CMg   : {r['desde']} a {r['hasta']}  |  {r['barras']:,} barras  |  "
             f"{r['filas']:,} registros"
         )
+        faltan = cobertura.total_faltantes(cob)
+        if faltan:
+            tramos = [
+                deriva.texto_rango(a, b)
+                for dias in cob["faltantes"].values()
+                for a, b in deriva.rangos(dias)
+            ]
+            resumen = ", ".join(tramos[:3]) + (" ..." if len(tramos) > 3 else "")
+            lineas.append(f"  FALTAN     : {faltan:,} dia(s): {resumen}  (opcion 4)")
     else:
         lineas.append("  Base CMg   : (vacia)")
 
-    manifiesto = cen.leer_manifiesto(ctx.bronze_cen)
     if manifiesto:
         dias = {e["fecha_operacion"] for e in manifiesto.values()}
         lineas.append(
@@ -112,6 +122,12 @@ def estado_base(ctx: Contexto) -> list[str]:
 
 
 # ------------------------------------------------------------------- comunes
+
+
+def _cobertura(
+    ctx: Contexto, con: duckdb.DuckDBPyConnection, manifiesto: dict[str, cen.EntradaManifiesto]
+) -> cobertura.Cobertura:
+    return cobertura.calcular(cobertura.dias_en_base(con, ctx.silver), manifiesto, hoy=ctx.hoy())
 
 
 def _rango_y_barras(ctx: Contexto, con: duckdb.DuckDBPyConnection) -> tuple[Mes, Mes, list[str]]:
@@ -416,6 +432,11 @@ def vigilar(ctx: Contexto) -> None:
     hallazgos = deriva.vigilar_fuente(
         ctx.nueva_sesion(), ctx.bronze_cen, hasta=hoy - timedelta(days=1), hoy=hoy
     )
+    con = ctx.abrir()
+    try:
+        hallazgos += cobertura.revisar(_cobertura(ctx, con, cen.leer_manifiesto(ctx.bronze_cen)))
+    finally:
+        con.close()
     _mostrar_hallazgos(ctx, hallazgos, "Vigilancia desde el menu")
 
 

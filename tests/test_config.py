@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from cmg_ingesta.config import Settings
+from cmg_ingesta.config import RAIZ_PROYECTO, Settings
 
 
 @pytest.fixture(autouse=True)
@@ -22,7 +22,7 @@ def test_valores_por_defecto() -> None:
     """Sin variables ni .env, se usan los valores por defecto de la clase."""
     config = Settings()
 
-    assert config.data_dir == Path("data")
+    assert config.data_dir == RAIZ_PROYECTO / "data"
     assert config.log_level == "INFO"
     assert config.cen_api_key is None
 
@@ -36,13 +36,32 @@ def test_lee_variable_de_entorno(monkeypatch: pytest.MonkeyPatch) -> None:
     assert config.log_level == "DEBUG"
 
 
-def test_lee_archivo_env(tmp_path: Path) -> None:
+def test_lee_archivo_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Si no hay variable de entorno, se lee el archivo .env."""
-    (tmp_path / ".env").write_text("CMGI_LOG_LEVEL=WARNING\n", encoding="utf-8")
+    env = tmp_path / ".env"
+    env.write_text("CMGI_LOG_LEVEL=WARNING\n", encoding="utf-8")
+    monkeypatch.setitem(Settings.model_config, "env_file", env)
 
     config = Settings()
 
     assert config.log_level == "WARNING"
+
+
+def test_la_raiz_es_la_carpeta_del_proyecto() -> None:
+    assert (RAIZ_PROYECTO / "pyproject.toml").exists()
+
+
+def test_data_dir_relativo_se_ancla_al_proyecto(monkeypatch: pytest.MonkeyPatch) -> None:
+    """REGRESION: `CMGI_DATA_DIR=data` desde otra carpeta buscaba <otra carpeta>\\data."""
+    monkeypatch.setenv("CMGI_DATA_DIR", "data")  # el autouse ya hizo chdir a tmp_path
+
+    assert Settings().data_dir == RAIZ_PROYECTO / "data"
+
+
+def test_data_dir_absoluto_se_respeta(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("CMGI_DATA_DIR", str(tmp_path / "otra"))
+
+    assert Settings().data_dir == tmp_path / "otra"
 
 
 @pytest.mark.parametrize("log_invalido", ["VERBOSO", "debug", "TRACE", "INFOs"])
