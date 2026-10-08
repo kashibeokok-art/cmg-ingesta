@@ -35,7 +35,7 @@ import time
 import zipfile
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Literal, TypedDict
 
@@ -43,6 +43,7 @@ from bs4 import BeautifulSoup
 
 from cmg_ingesta.domain import calendario
 from cmg_ingesta.extract import coordinador_cmg as cen
+from cmg_ingesta.extract import sitemap_cen
 
 Severidad = Literal["info", "aviso", "critico"]
 
@@ -241,20 +242,7 @@ def revisar_pagina_dia(dia: date, html: str, docs: list[cen.Documento]) -> list[
         )
 
     for d in docs:
-        if d["tipo"] == "desconocido":
-            parece = "def" if "_def" in d["nombre"] else "pre" if "_pre" in d["nombre"] else "?"
-            hallazgos.append(
-                _h(
-                    "aviso",
-                    "nombre_no_catalogado",
-                    f"Nombre de archivo que no calza con ningun patron conocido "
-                    f"(parece '{parece}'). Se descargo igual, pero queda ultimo en "
-                    "mejor_version().",
-                    d["nombre"],
-                    "Agregar la variante a RE_NOMBRE en extract/coordinador_cmg.py y un "
-                    "caso a test_tipo_version_y_reemision_del_nombre.",
-                )
-            )
+        hallazgos += _revisar_nombre_y_etiqueta(dia, d)
         if d["fecha_publicacion"] is None:
             hallazgos.append(
                 _h(
@@ -267,17 +255,92 @@ def revisar_pagina_dia(dia: date, html: str, docs: list[cen.Documento]) -> list[
                     "Recapturar el fixture y compararlo con el guardado.",
                 )
             )
-        m = cen.RE_NOMBRE.search(d["nombre"])
-        if m and m.group("aammdd") != _aammdd(dia):
-            hallazgos.append(
-                _h(
-                    "aviso",
-                    "fecha_del_nombre_distinta",
-                    f"La pagina del {dia} enlaza un archivo de otra fecha.",
-                    f"{d['nombre']} (esperado ...{_aammdd(dia)}...)",
-                    "Revisar a que dia corresponden los datos antes de ingerirlo.",
-                )
+    return hallazgos
+
+
+def _revisar_nombre_y_etiqueta(dia: date, d: cen.Documento) -> list[Hallazgo]:
+    """Lo que el nombre y la etiqueta de un documento dicen, y si se contradicen.
+
+    El tipo y la version que USA el programa combinan las dos fuentes
+    (`cen.clasificar_documento`). Estos avisos sirven para mantener el catalogo:
+    no frenan la descarga, y la ingesta revisa el contenido del ZIP de todos modos.
+    """
+    hallazgos: list[Hallazgo] = []
+    tipo_n, version_n, _ = cen._info_nombre(d["nombre"])
+    de_etiqueta = cen.info_etiqueta(d["etiqueta"])
+
+    if tipo_n == "desconocido":
+        hallazgos.append(
+            _h(
+                "critico" if de_etiqueta is None else "aviso",
+                "nombre_no_catalogado",
+                "Nombre de archivo que no calza con ninguna forma conocida. "
+                + (
+                    f"El tipo y la version se tomaron de la etiqueta ({d['etiqueta']!r})."
+                    if de_etiqueta
+                    else "La etiqueta tampoco se pudo leer: el dia no se ingiere."
+                ),
+                d["nombre"],
+                "Agregar la forma a RE_NOMBRE en extract/coordinador_cmg.py y el nombre "
+                "a tests/fixtures/nombres_reales.tsv.",
             )
+        )
+    if de_etiqueta is None:
+        hallazgos.append(
+            _h(
+                "aviso",
+                "etiqueta_no_reconocida",
+                "La etiqueta del documento no dice 'Preliminar' ni 'Definitivo'.",
+                f"{d['nombre']}: {d['etiqueta']!r}",
+                "Revisar RE_ETIQUETA: es la fuente principal del tipo y la version.",
+            )
+        )
+    elif tipo_n != "desconocido" and de_etiqueta != (tipo_n, version_n):
+        hallazgos.append(
+            _h(
+                "aviso",
+                "nombre_y_etiqueta_distintos",
+                f"El nombre dice {tipo_n} v{version_n} y la etiqueta "
+                f"{de_etiqueta[0]} v{de_etiqueta[1]}. Se uso el tipo de la etiqueta y "
+                "la version mayor (ver cen.clasificar_documento).",
+                f"{d['nombre']}: {d['etiqueta']!r}",
+                "Confirmar en el sitio cual es la version correcta.",
+            )
+        )
+
+    digitos = cen.digitos_fecha_nombre(d["nombre"])
+    fecha = cen.fecha_del_nombre(d["nombre"])
+    if not digitos:
+        hallazgos.append(
+            _h(
+                "info",
+                "nombre_sin_fecha",
+                f"El archivo no trae fecha en el nombre; se uso la de la pagina ({dia}).",
+                d["nombre"],
+                "Nada que hacer: la ingesta verifica la fecha DENTRO del ZIP.",
+            )
+        )
+    elif fecha is None:
+        hallazgos.append(
+            _h(
+                "aviso",
+                "fecha_del_nombre_ilegible",
+                f"La fecha del nombre ({digitos}) no se puede leer sin adivinar; se uso "
+                f"la de la pagina ({dia}).",
+                d["nombre"],
+                "Nada que hacer si la ingesta no reporta fechas_inesperadas para ese dia.",
+            )
+        )
+    elif fecha != dia:
+        hallazgos.append(
+            _h(
+                "aviso",
+                "fecha_del_nombre_distinta",
+                f"La pagina del {dia} enlaza un archivo con otra fecha en el nombre.",
+                f"{d['nombre']} (esperado ...{_aammdd(dia)}...)",
+                "Se usa la fecha de la pagina; la ingesta confirma la fecha dentro del ZIP.",
+            )
+        )
     return hallazgos
 
 
@@ -602,10 +665,11 @@ def revisar_zip(ruta: Path, dia: date) -> list[Hallazgo]:
 #: archivo es normal y no se avisa.
 DIAS_GRACIA = 3
 
-#: El definitivo se publica 7 a 10 dias despues del dia de operacion. Medido:
-#: 2026-01-15 -> 7 d, 2026-04-04 -> 10 d, 2026-09-06 -> 9 d, 2026-09-28 -> 8 d.
-#: 15 dias deja margen sobre el peor caso observado antes de avisar.
-DIAS_MAX_PRE = 15
+#: Dias que puede tardar el definitivo antes de avisar. Medido el 2026-10-08 sobre
+#: 771 definitivos originales (2024-08 a 2026-10): mediana 9, p95 14, p99 17,
+#: maximo 23. Con 15 (el valor anterior, fijado con 4 casos) habria 19 falsas
+#: alarmas; con 25, ninguna.
+DIAS_MAX_PRE = 25
 
 
 def rangos(dias: list[date]) -> list[tuple[date, date]]:
@@ -712,6 +776,7 @@ def sincronizar_vigilando(
     timeout: float = 30.0,
     hoy: date | None = None,
     avisar: Callable[[str], None] | None = None,
+    revisar_sitemap: bool = True,
 ) -> tuple[list[cen.EntradaManifiesto], list[Hallazgo]]:
     """`sincronizar` + deteccion de cambios en cada pagina y cada ZIP.
 
@@ -723,9 +788,15 @@ def sincronizar_vigilando(
 
     `avisar` recibe una linea por dia revisado y por ZIP bajado: un backfill son
     cientos de dias y sin avance la pantalla parece colgada.
+
+    Con `revisar_sitemap` (por defecto) busca ademas REVISIONES publicadas desde
+    la ultima vez (`extract/sitemap_cen.py`) y baja los dias afectados aunque
+    esten fuera del rango pedido: un v2 de hace dos meses entra solo.
     """
     anios = range(desde.year, hasta.year + 1)
     slugs, hallazgos = actualizar_slugs(sesion, carpeta, anios, timeout=timeout)
+    punto = sitemap_cen.punto_de_partida(carpeta, cen.leer_manifiesto(carpeta))
+    ahora = datetime.now(UTC)
 
     def al_leer_pagina(dia: date, html: str, docs: list[cen.Documento]) -> None:
         hallazgos.extend(revisar_pagina_dia(dia, html, docs))
@@ -737,21 +808,152 @@ def sincronizar_vigilando(
         if avisar:
             avisar(f"    + {entrada['nombre']}  ({entrada['bytes'] / 1024 / 1024:.1f} MB)")
 
-    nuevos = cen.sincronizar(
-        desde,
-        hasta,
-        carpeta,
-        sesion,
-        pausa=pausa,
-        timeout=timeout,
-        slugs=slugs,
-        al_leer_pagina=al_leer_pagina,
-        al_bajar=al_bajar,
-    )
+    def al_fallar(doc: cen.Documento, motivo: str) -> None:
+        hallazgos.append(
+            _h(
+                "aviso",
+                "zip_no_descargado",
+                f"El ZIP del {doc['fecha_operacion']} siguio llegando mal tras los "
+                f"reintentos ({motivo}). No se registro: se reintenta en la proxima corrida.",
+                doc["url"],
+                "Si se repite, abrir el enlace en el navegador: puede estar roto en el sitio.",
+            )
+        )
+        if avisar:
+            avisar(f"    ! {doc['nombre']}: {motivo}")
+
+    def bajar(d1: date, d2: date) -> list[cen.EntradaManifiesto]:
+        return cen.sincronizar(
+            d1,
+            d2,
+            carpeta,
+            sesion,
+            pausa=pausa,
+            timeout=timeout,
+            slugs=slugs,
+            al_leer_pagina=al_leer_pagina,
+            al_bajar=al_bajar,
+            al_fallar=al_fallar,
+        )
+
+    nuevos = bajar(desde, hasta)
+
+    if revisar_sitemap:
+        nuevos += _bajar_revisiones(
+            punto,
+            ahora,
+            desde,
+            hasta,
+            carpeta,
+            sesion,
+            pausa,
+            timeout,
+            slugs,
+            bajar,
+            hallazgos,
+            avisar,
+        )
+
     hallazgos += revisar_completitud(
         cen.leer_manifiesto(carpeta), desde, hasta, hoy or date.today()
     )
     return nuevos, hallazgos
+
+
+def _dias_revisados(revisiones: list[sitemap_cen.Revision], hasta: date) -> list[date]:
+    """Los dias de operacion con revisiones, dentro de lo que cubre la pagina."""
+    dias = {date.fromisoformat(r["dia"]) for r in revisiones if r["dia"]}
+    return sorted(d for d in dias if cen.INICIO_FUENTE <= d <= hasta)
+
+
+def _hallazgos_busqueda(busqueda: sitemap_cen.Busqueda) -> list[Hallazgo]:
+    """Avisos sobre la busqueda misma: truncada o con slugs sin fecha."""
+    hallazgos: list[Hallazgo] = []
+    if busqueda["truncada"]:
+        hallazgos.append(
+            _h(
+                "aviso",
+                "revisiones_truncadas",
+                f"Habia mas de {sitemap_cen.MAX_SUBSITEMAPS} sub-sitemaps modificados: solo "
+                "se revisaron los mas recientes.",
+                f"{busqueda['subsitemaps_consultados']} consultados",
+                "Hacer un barrido completo: cmg descargar-cen --desde 2024-08-01.",
+            )
+        )
+    sin_dia = [r["url"] for r in busqueda["revisiones"] if r["dia"] is None]
+    if sin_dia:
+        hallazgos.append(
+            _h(
+                "aviso",
+                "revision_sin_fecha",
+                f"{len(sin_dia)} documento(s) de CMg Real cambiaron, pero su slug no trae "
+                "el dia de operacion.",
+                "; ".join(sin_dia)[:500],
+                "Abrir el enlace y bajar ese dia a mano con cmg descargar-cen.",
+            )
+        )
+    return hallazgos
+
+
+def _bajar_revisiones(
+    punto: datetime | None,
+    ahora: datetime,
+    desde: date,
+    hasta: date,
+    carpeta: Path,
+    sesion: cen.Sesion,
+    pausa: float,
+    timeout: float,
+    slugs: cen.Slugs,
+    bajar: Callable[[date, date], list[cen.EntradaManifiesto]],
+    hallazgos: list[Hallazgo],
+    avisar: Callable[[str], None] | None,
+) -> list[cen.EntradaManifiesto]:
+    """Baja los dias con revisiones publicadas desde `punto` (ver `sitemap_cen`).
+
+    Sin punto de partida (nada descargado antes de esta corrida) no hay contra
+    que comparar: se guarda `ahora` como linea base y listo.
+    """
+    if punto is None:
+        sitemap_cen.guardar_estado(carpeta, ahora)
+        return []
+    try:
+        busqueda = sitemap_cen.buscar_revisiones(sesion, punto, pausa, timeout)
+    except cen.ErrorDescarga as e:
+        hallazgos.append(
+            _h(
+                "aviso",
+                "sitemap_no_disponible",
+                "No se pudo leer el sitemap: las revisiones de dias antiguos no se "
+                "buscaron en esta corrida.",
+                str(e)[:300],
+                "Se reintenta solo en la proxima corrida (el punto de partida no avanza).",
+            )
+        )
+        return []
+    hallazgos += _hallazgos_busqueda(busqueda)
+
+    afuera = [d for d in _dias_revisados(busqueda["revisiones"], hasta) if not desde <= d <= hasta]
+    nuevos: list[cen.EntradaManifiesto] = []
+    for d1, d2 in rangos(afuera):
+        if avisar:
+            avisar(f"  revision publicada: {texto_rango(d1, d2)}")
+        nuevos += bajar(d1, d2)
+    if busqueda["revisiones"]:
+        hallazgos.append(
+            _h(
+                "info",
+                "revisiones_detectadas",
+                f"{len(busqueda['revisiones'])} documento(s) revisado(s) desde "
+                f"{punto:%Y-%m-%d %H:%M} "
+                f"UTC; {len(afuera)} dia(s) fuera del rango pedido se volvieron a mirar.",
+                ", ".join(texto_rango(a, b) for a, b in rangos(afuera))[:500]
+                or "todos en el rango",
+                "Nada que hacer: lo nuevo ya se descargo. La ingesta reescribe esos meses.",
+            )
+        )
+    sitemap_cen.guardar_estado(carpeta, ahora)  # solo si todo lo anterior salio bien
+    return nuevos
 
 
 def vigilar_fuente(
@@ -769,7 +971,7 @@ def vigilar_fuente(
     2. Revisa las paginas de los ultimos `dias` dias.
     3. Re-inspecciona el ZIP mas reciente que ya este en `carpeta`.
     4. Avisa si no hubo publicaciones en todo el periodo (frescura).
-    5. Revisa la completitud desde el INICIO DE LA FUENTE (2025-01-01), no desde
+    5. Revisa la completitud desde el INICIO DE LA FUENTE (`cen.INICIO_FUENTE`), no desde
        el primer archivo descargado: dias sin archivo y preliminares viejos.
 
     Lo esperado es fijo. Si se midiera desde lo descargado, bajar solo los dias
@@ -812,6 +1014,51 @@ def vigilar_fuente(
             hallazgos += revisar_zip(ruta, date.fromisoformat(ultimo["fecha_operacion"]))
     # tambien con el manifiesto vacio: no haber bajado nada es el hueco mas grande
     hallazgos += revisar_completitud(manifiesto, cen.INICIO_FUENTE, hasta, hoy or date.today())
+    hallazgos += _revisiones_pendientes(sesion, carpeta, manifiesto, hasta, pausa, timeout)
+    return hallazgos
+
+
+def _revisiones_pendientes(
+    sesion: cen.Sesion,
+    carpeta: Path,
+    manifiesto: dict[str, cen.EntradaManifiesto],
+    hasta: date,
+    pausa: float,
+    timeout: float,
+) -> list[Hallazgo]:
+    """Revisiones publicadas que todavia no se bajaron. No descarga nada.
+
+    El punto de partida solo avanza cuando `descargar-cen` (o el menu) baja las
+    revisiones; por eso todo lo que el sitemap muestre despues de el esta pendiente.
+    """
+    punto = sitemap_cen.punto_de_partida(carpeta, manifiesto)
+    if punto is None:
+        return []
+    try:
+        busqueda = sitemap_cen.buscar_revisiones(sesion, punto, pausa, timeout)
+    except cen.ErrorDescarga as e:
+        return [
+            _h(
+                "aviso",
+                "sitemap_no_disponible",
+                "No se pudo leer el sitemap para buscar revisiones de dias antiguos.",
+                str(e)[:300],
+                "Reintentar mas tarde. Si se repite, revisar si el sitio cambio su sitemap.",
+            )
+        ]
+    hallazgos = _hallazgos_busqueda(busqueda)
+    dias = _dias_revisados(busqueda["revisiones"], hasta)
+    if dias:
+        hallazgos.append(
+            _h(
+                "aviso",
+                "revisiones_pendientes",
+                f"El Coordinador publico revisiones de {len(dias)} dia(s) despues de "
+                f"{punto:%Y-%m-%d %H:%M} UTC que aun no se descargan.",
+                ", ".join(texto_rango(a, b) for a, b in rangos(dias))[:500],
+                "Correr cmg descargar-cen (cualquier rango): baja las revisiones solo.",
+            )
+        )
     return hallazgos
 
 

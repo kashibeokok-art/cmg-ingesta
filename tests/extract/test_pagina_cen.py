@@ -60,10 +60,15 @@ def test_tipo_desconocido_no_se_usa() -> None:
     assert pagina_cen.elegir_por_dia({e["nombre"]: e}) == {}
 
 
-def test_antes_de_2025_no_se_usa() -> None:
-    """2024 es del Maestro: la pagina no lo pisa aunque haya ZIP en el Bronze."""
-    e = entrada(date(2024, 12, 31), "def")
+def test_antes_del_inicio_de_la_fuente_no_se_usa() -> None:
+    """Hasta 2024-07 es del Maestro: la pagina no lo pisa aunque haya ZIP en el Bronze."""
+    e = entrada(date(2024, 7, 31), "def")
     assert pagina_cen.elegir_por_dia({e["nombre"]: e}) == {}
+
+
+def test_desde_agosto_2024_si_se_usa() -> None:
+    e = entrada(date(2024, 8, 1), "def")
+    assert list(pagina_cen.elegir_por_dia({e["nombre"]: e})) == [date(2024, 8, 1)]
 
 
 # =================================================================== mapeo
@@ -313,10 +318,10 @@ def test_un_zip_que_falta_en_disco_se_omite(
     assert "no en disco" in reporte[0]["omitidos"][0]
 
 
-def test_sin_archivos_desde_2025_falla_y_explica(
+def test_sin_archivos_desde_el_inicio_falla_y_explica(
     con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
 ) -> None:
-    bronze(date(2024, 12, 31))
+    bronze(date(2024, 7, 31))
     with pytest.raises(ValueError, match="descargar-cen"):
         correr(con, tmp_path)
 
@@ -339,3 +344,29 @@ def test_la_pagina_usa_los_mismos_nombres_que_el_historico(
         con, tmp_path, zip_cen, date(2026, 6, 15), "def", barras=("PEÑABLANCA____013",)
     )
     assert set(columnas(filas, "barra")) == {"PENABLANCA____013"}
+
+
+def test_un_dia_con_archivo_sin_clasificar_no_se_ingiere_y_se_reporta(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    """El archivo raro podria ser la version vigente: no se elige otro EN SILENCIO."""
+    bronze(date(2026, 6, 15))
+    bronze(date(2026, 6, 16))
+    m = cen.leer_manifiesto(tmp_path / "bronze")
+    raro = entrada(date(2026, 6, 16), "desconocido")
+    m[raro["nombre"]] = raro
+    cen.guardar_manifiesto(tmp_path / "bronze", m)
+
+    reporte, _ = correr(con, tmp_path)
+
+    assert [x[0] for x in silver(con, tmp_path)] == [date(2026, 6, 15)]
+    assert any("2026-06-16" in o and "sin clasificar" in o for o in reporte[0]["omitidos"])
+    assert ingerir_cen.hay_problemas(reporte)
+
+
+def test_elegir_por_dia_desempata_por_fecha_de_publicacion() -> None:
+    d = date(2026, 6, 15)
+    a, b = entrada(d, "def", 3), entrada(d, "def", 3, reemision=0)
+    a["nombre"], b["nombre"] = "a.zip", "b.zip"
+    a["fecha_publicacion"], b["fecha_publicacion"] = "2026-08-17", "2026-08-25"
+    assert pagina_cen.elegir_por_dia({"a": a, "b": b})[d]["nombre"] == "b.zip"

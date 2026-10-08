@@ -238,6 +238,7 @@ class Respuesta:
         self.status_code = status_code
         self.text = texto
         self.content = contenido
+        self.headers: dict[str, str] = {}
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
@@ -261,8 +262,14 @@ class Sesion:
 
 def pagina(*hrefs: str) -> str:
     """Una pagina de dia con la estructura real: un <div> por documento."""
+
+    def etiqueta(h: str) -> str:
+        tipo = "Preliminar" if "_pre" in h else "Definitivo"
+        return f"Antecedentes Costo Marginal Real {tipo}"
+
     bloques_html = "".join(
-        f"""<div><span class="documentos-Publicar-Fecha">Fecha de publicaci&oacute;n:
+        f"""<div><span class="informes-estudio-Titulo" title="{etiqueta(h)}">x</span>
+        <span class="documentos-Publicar-Fecha">Fecha de publicaci&oacute;n:
         22/01/2026</span><a href="{h}">Descargar ZIP</a></div>"""
         for h in hrefs
     )
@@ -445,3 +452,21 @@ def test_los_comandos_siguen_funcionando_sin_menu(con_base: Path) -> None:
     r = runner.invoke(cli.app, ["estado"])
     assert r.exit_code == cli.SALIDA_OK
     assert "COSTOS MARGINALES" not in r.stdout
+
+
+def test_descargar_cen_con_el_sitio_caido_explica_como_retomar(
+    entorno: Path, sin_red: Callable[..., Sesion], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Un 503 persistente: exit 1, mensaje claro y sin traceback."""
+
+    class Caido:
+        def get(self, url: str, timeout: float = 30.0) -> Respuesta:
+            return Respuesta(503)
+
+    sin_red({})
+    monkeypatch.setattr(cli, "_sesion", lambda: Caido())
+    r = runner.invoke(cli.app, ["descargar-cen", "--desde", "2026-01-15", "--hasta", "2026-01-15"])
+    assert r.exit_code == cli.SALIDA_ERROR
+    assert "no respondio" in r.stderr
+    assert "retomar" in r.stderr
+    assert r.exception is None or isinstance(r.exception, SystemExit)

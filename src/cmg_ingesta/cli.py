@@ -37,6 +37,11 @@ SALIDA_OK = 0
 SALIDA_ERROR = 1
 SALIDA_CON_HALLAZGOS = 2
 
+MENSAJE_RETOMAR = (
+    "Lo ya descargado quedo registrado. Vuelve a correr el mismo comando para retomar: "
+    "no se bajara de nuevo."
+)
+
 app = typer.Typer(
     help="Base de costos marginales por barra del SEN de Chile. Sin comando, abre el menu.",
     add_completion=False,
@@ -152,7 +157,7 @@ def migrar_historico(
         typer.Argument(help="Carpeta CMG_DB de la base antigua (formato anio=/mes=)."),
     ],
 ) -> None:
-    """Migra el historico 2021-2024 desde CMG_DB, validando el calendario."""
+    """Migra el historico 2021-01 a 2024-07 desde CMG_DB, validando el calendario."""
     cfg = _settings()
     if not origen.is_dir():
         typer.echo(f"No existe la carpeta: {origen}", err=True)
@@ -339,6 +344,10 @@ def descargar_cen(
     except ValueError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(SALIDA_ERROR) from e
+    except cen.ErrorDescarga as e:
+        typer.echo(f"El sitio no respondio: {e}", err=True)
+        typer.echo(MENSAJE_RETOMAR, err=True)
+        raise typer.Exit(SALIDA_ERROR) from e
 
     for n in nuevos:
         typer.echo(f"  + {n['nombre']}  ({n['bytes'] / 1024 / 1024:.1f} MB)")
@@ -352,7 +361,7 @@ def ingerir_pagina(
         bool, typer.Option(help="Reescribir todos los meses aunque no hayan cambiado.")
     ] = False,
 ) -> None:
-    """Pasa a Silver los ZIP del Coordinador ya descargados (2025 en adelante).
+    """Pasa a Silver los ZIP del Coordinador ya descargados (2024-08 en adelante).
 
     Incremental: solo reescribe los meses cuyos archivos cambiaron. Un dia con
     hallazgo critico no entra y se reporta.
@@ -416,6 +425,9 @@ def vigilar_fuente(
         )
     except ValueError as e:
         typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(SALIDA_ERROR) from e
+    except cen.ErrorDescarga as e:
+        typer.echo(f"El sitio no respondio: {e}", err=True)
         raise typer.Exit(SALIDA_ERROR) from e
 
     # lo que solo Silver puede ver: huecos del Maestro y dias bajados sin ingerir

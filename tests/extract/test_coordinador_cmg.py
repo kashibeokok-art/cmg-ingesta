@@ -1,11 +1,13 @@
 """Tests del extractor del sitio del Coordinador. Ninguno toca la red.
 
-Los fixtures HTML son SINTETICOS (ver tests/fixtures/LEEME.md): desde este
-entorno el sitio devuelve 403 con `cf-mitigated: challenge`. Verifican que el
-parser cumpla las reglas documentadas, pero NO son regresion contra el sitio.
+Los fixtures HTML son paginas REALES del sitio, capturadas con `curl_cffi` (ver
+tests/fixtures/LEEME.md). `nombres_reales.tsv` trae los 1.765 nombres y etiquetas
+publicados entre 2024-08 y 2026-10 (escaneo del 2026-10-08).
 """
 
+import io
 import json
+import zipfile
 from datetime import date
 from pathlib import Path
 
@@ -276,10 +278,17 @@ class SesionFalsa:
 
 
 class RespuestaFalsa:
-    def __init__(self, status_code: int, texto: str = "", contenido: bytes = b""):
+    def __init__(
+        self,
+        status_code: int,
+        texto: str = "",
+        contenido: bytes = b"",
+        headers: dict[str, str] | None = None,
+    ):
         self.status_code = status_code
         self.text = texto
         self.content = contenido
+        self.headers = headers or {}
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
@@ -298,21 +307,41 @@ def test_un_404_es_un_dia_sin_publicacion_no_un_error() -> None:
     assert cen.listar_documentos(date(2026, 1, 15), sesion) == []
 
 
-def test_un_500_si_levanta_excepcion() -> None:
-    """Un 500 no significa 'no hay datos': no se puede tragar."""
+def test_un_500_persistente_levanta_error_descarga(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Un 500 no significa 'no hay datos': se reintenta y, si sigue, no se traga."""
+    monkeypatch.setattr("time.sleep", lambda _s: None)
 
     class SesionRota:
         def get(self, url: str, timeout: float = 30.0) -> RespuestaFalsa:
             return RespuestaFalsa(500)
 
-    with pytest.raises(RuntimeError, match="HTTP 500"):
+    with pytest.raises(cen.ErrorDescarga, match="HTTP 500"):
         cen.listar_documentos(date(2026, 1, 15), SesionRota())
+
+
+def test_un_403_no_se_reintenta_y_levanta_error() -> None:
+    """Esperar no arregla un 403 (Cloudflare o permiso): falla al primer intento."""
+    pedidos: list[str] = []
+
+    class SesionBloqueada:
+        def get(self, url: str, timeout: float = 30.0) -> RespuestaFalsa:
+            pedidos.append(url)
+            return RespuestaFalsa(403, texto="cf-mitigated")
+
+    with pytest.raises(cen.ErrorDescarga, match="HTTP 403"):
+        cen.listar_documentos(date(2026, 1, 15), SesionBloqueada())
+    assert len(pedidos) == 1
 
 
 # ============================================= 2c) idempotencia de sincronizar
 
 
-ZIP_FALSO = b"PK\x03\x04contenido-de-prueba"
+def zip_valido(texto: str) -> bytes:
+    """Un ZIP de verdad (chico): la descarga ahora verifica que abra."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("contenido.txt", texto)
+    return buf.getvalue()
 
 
 def armar_sesion(dia: date, fixture: str) -> SesionFalsa:
@@ -321,7 +350,7 @@ def armar_sesion(dia: date, fixture: str) -> SesionFalsa:
     docs = cen.parsear_documentos(pagina, dia)
     return SesionFalsa(
         paginas={cen.url_dia(dia): pagina},
-        zips={d["url"]: ZIP_FALSO + d["nombre"].encode() for d in docs},
+        zips={d["url"]: zip_valido(d["nombre"]) for d in docs},
     )
 
 
@@ -395,7 +424,7 @@ def test_una_revision_v2_se_baja_y_no_borra_la_anterior(tmp_path: Path) -> None:
 
     sesion2 = SesionFalsa(
         paginas={cen.url_dia(dia): pagina_v2},
-        zips={d["url"]: ZIP_FALSO + d["nombre"].encode() for d in docs},
+        zips={d["url"]: zip_valido(d["nombre"]) for d in docs},
     )
     nuevos = cen.sincronizar(dia, dia, tmp_path, sesion2, pausa=1.0)
 
@@ -437,11 +466,12 @@ def test_manifiesto_corrupto_se_trata_como_vacio(tmp_path: Path) -> None:
 
 
 def test_el_manifiesto_se_escribe_de_forma_atomica(tmp_path: Path) -> None:
-    """No queda un .tmp tras el exito."""
+    """No queda un .tmp ni un .part tras el exito."""
     dia = date(2026, 10, 5)
     sesion = armar_sesion(dia, "dia_2026-10-05.html")
     cen.sincronizar(dia, dia, tmp_path, sesion, pausa=1.0)
     assert list(tmp_path.glob("*.tmp")) == []
+    assert list(tmp_path.glob("*.part")) == []
     assert cen.ruta_manifiesto(tmp_path).exists()
 
 
@@ -477,7 +507,7 @@ def _completo_hasta(ultimo: str, tipo: str = "def") -> dict[str, cen.EntradaMani
 
 
 def test_desde_sugerido_sin_nada_descargado_es_el_backfill() -> None:
-    assert cen.desde_sugerido({}, AYER) == cen.INICIO_FUENTE == date(2025, 1, 1)
+    assert cen.desde_sugerido({}, AYER) == cen.INICIO_FUENTE == date(2024, 8, 1)
 
 
 def test_desde_sugerido_sigue_despues_del_ultimo_dia() -> None:
@@ -487,9 +517,9 @@ def test_desde_sugerido_sigue_despues_del_ultimo_dia() -> None:
 
 def test_desde_sugerido_no_olvida_el_hueco_al_bajar_dias_recientes() -> None:
     """REGRESION (reportado por el usuario 2026-10-08): con solo 10-04..10-06 bajados,
-    sugeria 10-04 y el hueco 2025-01-01..2026-10-03 quedaba fuera para siempre."""
+    sugeria 10-04 y el hueco anterior quedaba fuera para siempre."""
     m = _manifiesto(*(_entrada(f"2026-10-0{d}", "def") for d in (4, 5, 6)))
-    assert cen.desde_sugerido(m, AYER) == date(2025, 1, 1)
+    assert cen.desde_sugerido(m, AYER) == cen.INICIO_FUENTE
 
 
 def test_desde_sugerido_vuelve_a_un_hueco_en_medio() -> None:

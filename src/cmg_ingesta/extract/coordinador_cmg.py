@@ -28,11 +28,13 @@ con la forma de `Sesion`. Eso permite testearlos sin red.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import re
 import time
-from collections.abc import Callable, Iterator
-from datetime import date, timedelta
+import zipfile
+from collections.abc import Callable, Iterator, Mapping
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Protocol, TypedDict
 
@@ -71,29 +73,64 @@ MESES: dict[int, str] = {
 #: `span.documentos-Publicar-Fecha` del bloque viene VACIO.
 RE_PUB = re.compile(r"Fecha de publicaci[óo]n:\s*(\d{2})/(\d{2})/(\d{4})")
 
-#: El nombre del archivo, en TODAS las variantes que publica el sitio. Verificadas
-#: contra nombres reales (2026-10-06):
+#: El nombre del archivo. Los nombres se escriben A MANO en el Coordinador: el
+#: escaneo del 2026-10-08 encontro 26 formas en 1.765 ZIP (2024-08 a 2026-10). El
+#: catalogo completo esta en tests/fixtures/nombres_reales.tsv y un test exige que
+#: ninguno quede sin reconocer. Las formas, de la mas comun a la mas rara:
 #:
-#:     Antecedentes_CMG_Real_def_260115.zip       base
-#:     Antecedentes_CMG_Real_def_v2_260707.zip    version ANTES de la fecha
-#:     Antecedentes_CMG_Real_pre_260906_v2.zip    version DESPUES de la fecha
-#:     Antecedentes_CMG_Real_pre_260404-1.zip     re-subida (sufijo -N de WordPress)
+#:     def_260115.zip  pre_260115.zip         base (1.530 de 1.765)
+#:     def_260801_v2.zip  def_v2_250201.zip   version despues o antes de la fecha
+#:     def-v2_250203.zip  def-V2_240816.zip   version con guion, mayuscula
+#:     pre_260401-1.zip  pre_260811_v2-1.zip  re-subida (-N de WordPress)
+#:     pr_240907.zip  prel_v2_250612.zip      tipo abreviado o alargado
+#:     pre_20250717.zip  def_25406.zip        fecha de 8 digitos, o mal escrita
+#:     pre251116.zip  pre-v2_250220_.zip      sin _ antes de la fecha, _ sobrante
+#:     pre.zip  def-v3_v2.zip                 sin fecha
 #:
-#: El brief original solo documentaba la primera y la segunda forma. La tercera y
-#: la cuarta aparecieron al bajar archivos reales: con el patron anterior quedaban
-#: clasificadas como "desconocido".
+#: Por eso el nombre no se usa solo: se combina con la etiqueta de la pagina (ver
+#: RE_ETIQUETA y `clasificar_documento`).
 RE_NOMBRE = re.compile(
-    r"CMG_Real_(?P<tipo>[a-z]+)"
-    r"(?:_v(?P<v_antes>\d+))?"
-    r"_(?P<aammdd>\d{6})"
-    r"(?:_v(?P<v_despues>\d+))?"
-    r"(?:-(?P<reemision>\d+))?"
+    r"CMG_Real_(?P<tipo>prel|pre|pr|def)"  # el mas largo primero: "prel" antes que "pre"
+    r"(?:[_-]v(?P<v_antes>\d+))?"  # _v2 o -v2 o -V2 antes de la fecha
+    r"(?:_?(?P<fecha>\d{5,8}))?"  # fecha opcional; 6 = AAMMDD, 8 = AAAAMMDD, otra = mal escrita
+    r"(?:_v(?P<v_despues>\d+))?"  # _v2 despues de la fecha
+    r"_?"  # guion bajo sobrante antes del final
+    r"(?:-(?P<reemision>\d+))?"  # -1, -2: WordPress renombro al re-subir
     r"\.zip$",
+    re.I,
+)
+
+#: Tipos tal como aparecen en el nombre -> tipo canonico.
+TIPO_DEL_NOMBRE = {"def": "def", "pre": "pre", "prel": "pre", "pr": "pre"}
+
+#: La etiqueta del documento en la pagina. Mucho mas regular que el nombre: el
+#: escaneo encontro solo 7 formas, todas de esta familia:
+#:     "Antecedentes Costo Marginal Real Preliminar"
+#:     "Antecedentes Costo Marginal Real Definitivo v2"
+#:     "Antecedentes Costo Marginal Real Definitivo – V2"
+RE_ETIQUETA = re.compile(
+    r"Costo\s+Marginal\s+Real\s+(?P<tipo>Preliminar|Definitivo)(?:\W*v(?P<version>\d+))?",
     re.I,
 )
 
 PAUSA_MINIMA = 1.0
 MANIFIESTO = "manifiesto.json"
+
+#: Reintentos ante fallas transitorias (429, 5xx, timeout, conexion cortada). La
+#: espera crece: 2 s, 4 s, 8 s. Nunca se reintenta un 403 ni un 404: esperar no los
+#: arregla.
+REINTENTOS = 4
+ESPERA_BASE = 2.0
+
+
+class ErrorDescarga(Exception):
+    """Una peticion que fallo de verdad: tras los reintentos, o con un codigo que no
+    se arregla esperando (403, 401...).
+
+    Es una clase porque Python exige que las excepciones lo sean, pero no se usa
+    como objeto: solo sirve para que la CLI y el menu la reconozcan con `except
+    ErrorDescarga` y muestren un mensaje en vez de un traceback.
+    """
 
 
 class Documento(TypedDict):
@@ -141,6 +178,17 @@ class Respuesta(Protocol):
     text: str
     content: bytes
 
+    @property
+    def headers(self) -> Mapping[str, str]:
+        """Se usan dos: Content-Length (verificar que el ZIP llego entero) y
+        Retry-After (cuanto pide esperar el servidor ante un 429 o 503).
+
+        Es `property` (solo lectura) y no un atributo comun para que un `dict`
+        cumpla el contrato: mypy exige tipo EXACTO en un atributo que se puede
+        modificar, y aqui solo se lee.
+        """
+        ...
+
     def raise_for_status(self) -> None: ...
 
 
@@ -166,6 +214,62 @@ def nueva_sesion() -> Sesion:
     # hacer falta, el chequeo fallaria y habria que quitarlo.
     sesion: Sesion = curl_requests.Session(impersonate="chrome")  # type: ignore[assignment]
     return sesion
+
+
+#: Funcion para esperar. Se inyecta para que los tests de reintentos no duerman.
+Dormir = Callable[[float], None]
+
+
+def _es_transitorio(codigo: int) -> bool:
+    """Codigos que se arreglan esperando: demasiadas peticiones o falla del servidor."""
+    return codigo == 429 or 500 <= codigo < 600
+
+
+def _espera_pedida(r: Respuesta) -> float | None:
+    """Los segundos de `Retry-After`, si el servidor los pide y son un numero."""
+    valor = _encabezado(r, "Retry-After")
+    try:
+        return float(valor) if valor else None
+    except ValueError:
+        return None  # tambien puede venir como fecha HTTP; entonces se usa la espera propia
+
+
+def pedir(
+    sesion: Sesion,
+    url: str,
+    timeout: float = 30.0,
+    intentos: int = REINTENTOS,
+    espera: float = ESPERA_BASE,
+    dormir: Dormir | None = None,
+) -> Respuesta:
+    """GET con reintentos ante fallas TRANSITORIAS. Devuelve la respuesta tal cual.
+
+    - 2xx, 3xx, 404, 403...: se devuelven al primer intento; el que llama decide.
+      Un 404 de una pagina de dia significa "sin publicacion", y un 403 no se
+      arregla esperando (es Cloudflare o un permiso).
+    - 429, 5xx, timeout o conexion cortada: se espera 2 s, 4 s, 8 s (o lo que
+      diga `Retry-After`) y se reintenta.
+    - Si se agotan los intentos: `ErrorDescarga` con el ultimo motivo.
+
+    Se captura `Exception` a proposito: los errores de red los define la libreria
+    HTTP (`curl_cffi`), y este modulo no la importa para poder testearse sin ella.
+    """
+    esperar = dormir or time.sleep  # se busca al llamar: los tests pueden anularlo
+    motivo = ""
+    for intento in range(intentos):
+        pausa_servidor: float | None = None
+        try:
+            r = sesion.get(url, timeout=timeout)
+        except Exception as e:  # noqa: BLE001 - frontera con la libreria HTTP
+            motivo = f"{type(e).__name__}: {e}"
+        else:
+            if not _es_transitorio(r.status_code):
+                return r
+            motivo = f"HTTP {r.status_code}"
+            pausa_servidor = _espera_pedida(r)
+        if intento < intentos - 1:
+            esperar(pausa_servidor if pausa_servidor is not None else espera * 2**intento)
+    raise ErrorDescarga(f"{url}: {motivo} (tras {intentos} intentos)")
 
 
 # ------------------------------------------------------------- slugs de año
@@ -305,21 +409,83 @@ def dias_entre(desde: date, hasta: date) -> Iterator[date]:
 def _info_nombre(nombre: str) -> tuple[str, int, int]:
     """(tipo, version, reemision) a partir del nombre del archivo.
 
-    def_260115.zip      -> ("def", 1, 0)
-    def_v2_260707.zip   -> ("def", 2, 0)
-    pre_260906_v2.zip   -> ("pre", 2, 0)
-    pre_260404-1.zip    -> ("pre", 1, 1)
-    otra cosa           -> ("desconocido", 1, 0)
+    def_260115.zip         -> ("def", 1, 0)
+    def-V2_240816.zip      -> ("def", 2, 0)
+    pre_260811_v2-1.zip    -> ("pre", 2, 1)
+    pr_240907.zip          -> ("pre", 1, 0)      alias
+    otra cosa              -> ("desconocido", 1, 0)
+
+    Si la version aparece dos veces (`def-v3_v2.zip`, real), gana la mayor.
     """
     m = RE_NOMBRE.search(nombre)
     if not m:
         return ("desconocido", 1, 0)
-    tipo = m.group("tipo").lower()
-    if tipo not in ("def", "pre"):
-        return ("desconocido", 1, 0)
-    version = int(m.group("v_antes") or m.group("v_despues") or 1)
+    tipo = TIPO_DEL_NOMBRE[m.group("tipo").lower()]
+    versiones = [int(v) for v in (m.group("v_antes"), m.group("v_despues")) if v]
+    version = max(versiones, default=1)
     reemision = int(m.group("reemision") or 0)
     return (tipo, version, reemision)
+
+
+def digitos_fecha_nombre(nombre: str) -> str:
+    """Los digitos de fecha que trae el nombre, tal cual. "" si no trae ninguno."""
+    m = RE_NOMBRE.search(nombre)
+    return (m.group("fecha") or "") if m else ""
+
+
+def fecha_del_nombre(nombre: str) -> date | None:
+    """La fecha escrita en el nombre, si se puede leer sin adivinar.
+
+    6 digitos = AAMMDD, 8 = AAAAMMDD. Otra cantidad (`def_25406`, `pre_2507010`,
+    reales) o una fecha imposible devuelven None: no se adivina. La fecha que
+    USA el programa es siempre la del dia de la pagina, no esta.
+    """
+    digitos = digitos_fecha_nombre(nombre)
+    formatos = {6: "%y%m%d", 8: "%Y%m%d"}
+    if len(digitos) not in formatos:
+        return None
+    try:
+        return datetime.strptime(digitos, formatos[len(digitos)]).date()
+    except ValueError:
+        return None
+
+
+def info_etiqueta(etiqueta: str) -> tuple[str, int] | None:
+    """(tipo, version) a partir de la etiqueta de la pagina, o None si no se lee.
+
+    "Antecedentes Costo Marginal Real Preliminar"        -> ("pre", 1)
+    "Antecedentes Costo Marginal Real Definitivo v2"     -> ("def", 2)
+    "Antecedentes Costo Marginal Real Definitivo – V2"   -> ("def", 2)
+    """
+    m = RE_ETIQUETA.search(etiqueta)
+    if not m:
+        return None
+    tipo = "pre" if m.group("tipo").lower() == "preliminar" else "def"
+    return (tipo, int(m.group("version") or 1))
+
+
+def clasificar_documento(nombre: str, etiqueta: str) -> tuple[str, int, int]:
+    """(tipo, version, reemision) combinando las dos fuentes. Reglas sacadas de los
+    1.765 casos reales (2024-08 a 2026-10), donde las dos fuentes chocan 14 veces:
+
+    - TIPO: manda la etiqueta. Es regular (7 formas contra 26 del nombre) y en el
+      unico choque real (2025-02-25: `def-v3_250225.zip` con etiqueta "Preliminar
+      v3") la secuencia de publicacion le da la razon: el pre v3 salio el
+      2026-08-17 y el "Definitivo v3" el 2026-08-25, como siempre pre antes que def.
+    - VERSION: la MAYOR de las dos. En los otros 13 choques el nombre dice v2 y la
+      etiqueta lo omite ("Definitivo" a secas); nunca al reves.
+    - REEMISION: solo el nombre la trae (el -N de WordPress).
+    - Si una fuente no se lee, se usa la otra. Si ninguna, "desconocido".
+
+    Cada choque queda reportado por `quality/deriva.py` (nombre_y_etiqueta_distintos).
+    """
+    tipo_n, version_n, reemision = _info_nombre(nombre)
+    de_etiqueta = info_etiqueta(etiqueta)
+    if de_etiqueta is None:
+        return (tipo_n, version_n, reemision)
+    tipo_e, version_e = de_etiqueta
+    version = max(version_e, version_n) if tipo_n != "desconocido" else version_e
+    return (tipo_e, version, reemision)
 
 
 def parsear_documentos(html: str, dia: date) -> list[Documento]:
@@ -339,6 +505,8 @@ def parsear_documentos(html: str, dia: date) -> list[Documento]:
     3. El primer `span.documentos-Publicar-Fecha` del bloque viene **VACIO**.
        Por eso la fecha se busca por CONTENIDO con `RE_PUB` sobre el texto del
        bloque, no con `find(class_=...)`.
+
+    El tipo y la version salen de `clasificar_documento` (etiqueta primero).
     """
     soup = BeautifulSoup(html, "html.parser")
     docs: list[Documento] = []
@@ -348,7 +516,8 @@ def parsear_documentos(html: str, dia: date) -> list[Documento]:
         href = str(a["href"])
         if "/wp-content/uploads/" not in href or not href.lower().endswith(".zip"):
             continue
-        if "CMG_Real" not in href or href in vistos:
+        # sin distinguir mayusculas: "CMG_Real", "CMg_Real" o "cmg_real" son lo mismo
+        if "cmg_real" not in href.lower() or href in vistos:
             continue
         vistos.add(href)
 
@@ -366,7 +535,7 @@ def parsear_documentos(html: str, dia: date) -> list[Documento]:
             pub = f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
 
         nombre = href.rsplit("/", 1)[-1]
-        tipo, version, reemision = _info_nombre(nombre)
+        tipo, version, reemision = clasificar_documento(nombre, etiqueta)
 
         docs.append(
             {
@@ -407,14 +576,16 @@ def obtener_pagina_dia(
 ) -> str | None:
     """El HTML de la pagina del dia, o None si el dia no tiene pagina (404).
 
-    Un **404 es un dia sin publicacion**, no un error. Cualquier otro codigo de
-    error sí levanta excepcion, porque un 500 o un 403 no significan "no hay
-    datos".
+    Un **404 es un dia sin publicacion**, no un error. Las fallas transitorias
+    (429, 5xx, timeout) se reintentan en `pedir`. Cualquier otro error termina en
+    `ErrorDescarga`, porque un 403 no significa "no hay datos".
     """
-    r = sesion.get(url_dia(dia, slugs), timeout=timeout)
+    url = url_dia(dia, slugs)
+    r = pedir(sesion, url, timeout)
     if r.status_code == 404:
         return None
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise ErrorDescarga(f"{url}: HTTP {r.status_code} :: {r.text[:200]!r}")
     return r.text
 
 
@@ -477,6 +648,68 @@ def sha256_bytes(datos: bytes) -> str:
 AlLeerPagina = Callable[[date, str, list[Documento]], None]
 #: Gancho que se llama con cada ZIP recien bajado: (ruta, entrada del manifiesto).
 AlBajar = Callable[[Path, EntradaManifiesto], None]
+#: Gancho para un ZIP que siguio llegando mal tras los reintentos: (documento, motivo).
+AlFallar = Callable[[Documento, str], None]
+
+
+def _encabezado(r: Respuesta, nombre: str) -> str | None:
+    """Un encabezado HTTP sin importar mayusculas (`Content-Length` = `content-length`)."""
+    buscado = nombre.lower()
+    return next((v for k, v in r.headers.items() if k.lower() == buscado), None)
+
+
+def problema_del_zip(datos: bytes, bytes_anunciados: str | None = None) -> str | None:
+    """Por que estos bytes NO son un ZIP sano, o None si lo son.
+
+    Dos pruebas baratas antes de registrar un archivo:
+    1. Llego entero: el tamaño coincide con `Content-Length`, si el servidor lo dio.
+    2. Abre y sus miembros pasan el control de integridad (`testzip` verifica el
+       CRC de cada uno; para ~13 MB tarda una fraccion de segundo).
+    """
+    if bytes_anunciados and bytes_anunciados.isdigit() and int(bytes_anunciados) != len(datos):
+        return f"llegaron {len(datos):,} bytes de {int(bytes_anunciados):,} anunciados"
+    try:
+        with zipfile.ZipFile(io.BytesIO(datos)) as zf:
+            danado = zf.testzip()
+    except zipfile.BadZipFile:
+        return "no es un ZIP valido"
+    if danado is not None:
+        return f"el miembro {danado} esta dañado"
+    return None
+
+
+def bajar_zip(
+    sesion: Sesion,
+    url: str,
+    timeout: float = 30.0,
+    intentos: int = REINTENTOS,
+    dormir: Dormir | None = None,
+) -> tuple[bytes | None, str]:
+    """(datos, "") si el ZIP llego sano; (None, motivo) si no, tras los intentos.
+
+    Las fallas de TRANSPORTE (red, 5xx) las reintenta `pedir`, y si se agotan
+    sube `ErrorDescarga`: el sitio no responde y no tiene sentido seguir. Un ZIP
+    que llega pero llega MAL (truncado, corrupto, o un 404 en el enlace) se
+    reintenta aqui; si sigue mal, se devuelve el motivo y la sincronizacion
+    continua con el siguiente archivo.
+    """
+    esperar = dormir or time.sleep
+    motivo = ""
+    for intento in range(intentos):
+        r = pedir(sesion, url, timeout, intentos=intentos, dormir=dormir)
+        if r.status_code != 200:
+            motivo = f"HTTP {r.status_code}"
+        else:
+            # con compresion de transporte, Content-Length es el tamaño comprimido
+            comprimido = _encabezado(r, "Content-Encoding") not in (None, "", "identity")
+            anunciado = None if comprimido else _encabezado(r, "Content-Length")
+            problema = problema_del_zip(r.content, anunciado)
+            if problema is None:
+                return r.content, ""
+            motivo = problema
+        if intento < intentos - 1:
+            esperar(ESPERA_BASE * 2**intento)
+    return None, motivo
 
 
 def sincronizar(
@@ -489,6 +722,7 @@ def sincronizar(
     slugs: Slugs | None = None,
     al_leer_pagina: AlLeerPagina | None = None,
     al_bajar: AlBajar | None = None,
+    al_fallar: AlFallar | None = None,
 ) -> list[EntradaManifiesto]:
     """Descarga los ZIP nuevos del rango y los suma al manifiesto.
 
@@ -498,15 +732,19 @@ def sincronizar(
     `_def_260115.zip`, una revision nueva **sí** se descarga y **no** borra la
     anterior: las dos quedan, con su propio sha256.
 
-    **Descarga todo lo que parezca CMg Real**, aunque su nombre no calce con un
-    patron conocido (queda `tipo="desconocido"`): bajar de mas no rompe nada y
-    asegura que un archivo nuevo no se pierda. Lo estricto es la INGESTA, no la
-    descarga.
+    **Reanudable**: cada ZIP se escribe como `.part`, se verifica
+    (`problema_del_zip`), se renombra de un golpe y RECIEN AHI se anota en el
+    manifiesto, que se guarda tras cada archivo. Si la corrida se corta (red,
+    Ctrl+C, apagon), lo ya bajado queda registrado y no se vuelve a pedir.
+    Antes el manifiesto se guardaba solo al final (error A12).
 
-    Los ganchos `al_leer_pagina` y `al_bajar` permiten inspeccionar cada pagina
-    y cada ZIP sin que este modulo sepa nada de validaciones: es el mismo
-    patron que `avisar` en la migracion (inyeccion de dependencias). Los usa
-    `quality/deriva.py` para detectar cambios en el sitio.
+    **Descarga todo lo que parezca CMg Real**, aunque su nombre no calce con un
+    patron conocido: bajar de mas no rompe nada y asegura que un archivo nuevo no
+    se pierda. Lo estricto es la INGESTA, no la descarga.
+
+    Un ZIP que sigue llegando mal tras los reintentos NO se registra (asi se
+    reintenta en la proxima corrida) y se avisa por `al_fallar`. Si el sitio deja
+    de responder, sube `ErrorDescarga`.
 
     Devuelve solo lo nuevo de ESTA corrida.
     """
@@ -535,12 +773,16 @@ def sincronizar(
                 continue
 
             time.sleep(pausa)
-            r = sesion.get(doc["url"], timeout=timeout)
-            r.raise_for_status()
-            datos = r.content
+            datos, motivo = bajar_zip(sesion, doc["url"], timeout)
+            if datos is None:
+                if al_fallar is not None:
+                    al_fallar(doc, motivo)
+                continue
 
             destino = carpeta / doc["nombre"]
-            destino.write_bytes(datos)
+            parcial = destino.with_name(destino.name + ".part")
+            parcial.write_bytes(datos)
+            reemplazar_atomico(parcial, destino)
 
             entrada: EntradaManifiesto = {
                 "url": doc["url"],
@@ -555,29 +797,49 @@ def sincronizar(
                 "descargado_en": time.strftime("%Y-%m-%dT%H:%M:%S"),
             }
             manifiesto[doc["nombre"]] = entrada
+            guardar_manifiesto(carpeta, manifiesto)  # tras CADA archivo: reanudable
             nuevos.append(entrada)
             if al_bajar is not None:
                 al_bajar(destino, entrada)
 
-    if nuevos:
-        guardar_manifiesto(carpeta, manifiesto)
     return nuevos
 
 
-def mejor_version(docs: list[Documento]) -> Documento | None:
-    """De varios documentos de un dia, el que hay que usar.
+#: Prioridad de cada tipo al elegir version. "desconocido" queda ultimo.
+RANGO_TIPO = {"def": 2, "pre": 1}
 
-    Prioridad: `def` sobre `pre`, y mayor `version` sobre menor. Asi
-    `def_v2` gana a `def`, que gana a `pre_v2`, que gana a `pre`.
+
+def clave_version(e: Documento | EntradaManifiesto) -> tuple[int, int, int, str]:
+    """La clave para ordenar versiones de un mismo dia: la mayor es la vigente.
+
+    1. `def` sobre `pre`.
+    2. Mayor version (v3 > v2 > v1).
+    3. Mayor reemision (-2 > -1 > original).
+    4. EMPATE: la publicada despues. Pasa de verdad: el 2025-02-25 hay
+       `def-v3_v2.zip` y `def-v3_250225.zip`, los dos "definitivo v3".
+       Las fechas ISO (AAAA-MM-DD) se ordenan bien como texto.
+
+    La usan `mejor_version` y la ingesta (`pagina_cen.elegir_por_dia`): una sola
+    regla para las dos.
     """
-    if not docs:
-        return None
-    orden = {"def": 2, "pre": 1, "desconocido": 0}
-    return max(docs, key=lambda d: (orden.get(d["tipo"], 0), d["version"], d["reemision"]))
+    return (
+        RANGO_TIPO.get(e["tipo"], 0),
+        e["version"],
+        e["reemision"],
+        e["fecha_publicacion"] or "",
+    )
+
+
+def mejor_version(docs: list[Documento]) -> Documento | None:
+    """De varios documentos de un dia, el que hay que usar (ver `clave_version`)."""
+    return max(docs, key=clave_version) if docs else None
 
 
 #: Primer dia de la fuente (b). Lo anterior viene del Maestro (CLAUDE.md §0.1).
-INICIO_FUENTE = date(2025, 1, 1)
+#: Desde aqui los datos vienen de la pagina; antes, del Maestro (`cmg_db.ULTIMO_MES`).
+#: Era 2025-01-01; el usuario lo adelanto a 2024-08-01 el 2026-10-08. La pagina
+#: de 2024 solo publica de julio en adelante.
+INICIO_FUENTE = date(2024, 8, 1)
 
 
 def desde_sugerido(manifiesto: dict[str, EntradaManifiesto], ayer: date) -> date:
@@ -590,7 +852,7 @@ def desde_sugerido(manifiesto: dict[str, EntradaManifiesto], ayer: date) -> date
     "Lo nuevo" (el dia siguiente al ultimo descargado) es un caso del primero.
 
     Antes solo miraba despues del ultimo dia descargado: con el manifiesto vacio
-    sugeria 2025-01-01, pero apenas se bajaban unos dias recientes pasaba a
+    sugeria el inicio de la fuente, pero apenas se bajaban unos dias recientes pasaba a
     sugerir esos dias, y el hueco anterior quedaba fuera para siempre.
 
     Nunca devuelve un dia posterior a `ayer`.

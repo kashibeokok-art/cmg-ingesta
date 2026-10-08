@@ -68,9 +68,20 @@ def test_mes_disponible(con: duckdb.DuckDBPyConnection, tmp_path: Path) -> None:
 def test_meses_a_migrar_recorta_al_tramo_del_maestro(
     con: duckdb.DuckDBPyConnection, tmp_path: Path
 ) -> None:
-    """2025 en adelante NO se migra: esa fuente queda descartada."""
-    crear_cmg_db_falso(con, tmp_path, [(2020, 12), (2021, 1), (2024, 12), (2025, 1)])
-    assert cmg_db.meses_a_migrar(tmp_path) == [(2021, 1), (2024, 12)]
+    """Desde 2024-08 NO se migra: esos meses vienen de la pagina (cambio 2026-10-08)."""
+    meses = [(2020, 12), (2021, 1), (2024, 7), (2024, 8), (2024, 12), (2025, 1)]
+    crear_cmg_db_falso(con, tmp_path, meses)
+    assert cmg_db.meses_a_migrar(tmp_path) == [(2021, 1), (2024, 7)]
+
+
+def test_el_maestro_termina_justo_donde_empieza_la_pagina() -> None:
+    """Sin hueco ni traslape entre las dos fuentes, aunque se mueva el corte."""
+    from cmg_ingesta.extract import coordinador_cmg as cen
+
+    inicio = cen.INICIO_FUENTE
+    assert inicio.day == 1
+    anterior = (inicio.year, inicio.month - 1) if inicio.month > 1 else (inicio.year - 1, 12)
+    assert cmg_db.ULTIMO_MES == anterior
 
 
 def test_meses_a_migrar_vacio(tmp_path: Path) -> None:

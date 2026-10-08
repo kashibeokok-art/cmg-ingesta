@@ -53,7 +53,8 @@ def migrar_historico(
     destino: Path,
     avisar: Avisar = _nada,
 ) -> list[FilaReporte]:
-    """Migra 2021-01 a 2024-12 de `origen` (CMG_DB) a `destino` (Silver nueva).
+    """Migra 2021-01 a 2024-07 (`cmg_db.PRIMER_MES`..`ULTIMO_MES`) de `origen`
+    (CMG_DB) a `destino` (Silver nueva).
 
     Devuelve una fila de reporte por mes migrado, con las filas escritas y lo que
     encontraron las validaciones.

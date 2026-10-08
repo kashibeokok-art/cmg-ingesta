@@ -76,23 +76,29 @@ uv run cmg descargar STA.ELVIRA____013 --periodo 2024 --formato excel,csv
 uv run cmg riesgo STA.ELVIRA____013 QUELLON_______013 --periodo 2024-06
 ```
 
-### Datos nuevos (2025 en adelante) desde la página del Coordinador
+### Datos nuevos (2024-08 en adelante) desde la página del Coordinador
 
 ```powershell
-# 1. Bronze: baja los ZIP diarios (idempotente; --hasta por omisión = ayer)
-uv run cmg descargar-cen --desde 2025-01-01
+# 1. Bronze: baja los ZIP diarios (--hasta por omisión = ayer). Además busca en el
+#    sitemap del sitio las REVISIONES (v2, v3) publicadas desde la última vez y baja
+#    esos días aunque estén fuera del rango.
+uv run cmg descargar-cen --desde 2024-08-01
 
 # 2. Silver: ingiere solo los meses cuyos ZIP cambiaron
 uv run cmg ingerir-pagina
 
 # 3. Vigilancia (para tarea programada): cambios de formato, días sin archivo,
-#    preliminares que llevan más de 15 días sin definitivo
+#    preliminares que llevan más de 25 días sin definitivo, revisiones sin bajar
 uv run cmg vigilar-fuente
 ```
 
+La descarga es **reanudable**: si se corta (red, Ctrl+C), lo ya bajado queda registrado y
+basta volver a correr el mismo comando. Las fallas pasajeras del sitio (429, 5xx) se
+reintentan solas; cada ZIP se verifica antes de registrarse.
+
 Cuando algo requiere revisión manual, el comando sale con código 2 y deja un reporte en
 `data/alertas/deriva_*.md` (para leer) y `.json` (para procesar). Un día con hallazgo
-**crítico** no entra a Silver.
+**crítico**, o con un archivo que no se pudo clasificar, no entra a Silver.
 
 En Silver, la columna `origen` dice de dónde viene cada fila: `maestro_cmg_db`,
 `pagina_cen_def` o `pagina_cen_pre` (preliminar, puede cambiar cuando llegue el definitivo).
@@ -156,7 +162,7 @@ Gold (negocio).
 ## Desarrollar
 
 ```powershell
-uv run pytest          # 474 tests, ninguno toca la red
+uv run pytest          # 552 tests, ninguno toca la red
 uv run mypy            # tipado estricto
 uv run ruff check .    # linter
 uv run ruff format .   # formateo
@@ -177,11 +183,11 @@ uv run ruff format .   # formateo
 | Fase | |
 |---|---|
 | Dominio, esquema y escritura atómica | ✅ |
-| Migración del histórico 2021–2024 con validación | ✅ |
+| Migración del histórico 2021-01 → 2024-07 con validación | ✅ |
 | Consultas, exportes y riesgo nodal | ✅ |
 | CLI | ✅ |
-| Descarga desde la página del CEN (2025+) | ✅ |
+| Descarga desde la página del CEN (2024-08+) | ✅ |
 | Vigilancia de la fuente y completitud | ✅ |
 | Ingesta de la página a Silver | ✅ |
 | Menú interactivo | ✅ |
-| Carga real de 2025-01 a hoy | ⏳ pendiente de aprobación |
+| Carga real de 2024-08 a hoy | ⏳ pendiente de aprobación |

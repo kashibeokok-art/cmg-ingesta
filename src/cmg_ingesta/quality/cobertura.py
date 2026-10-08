@@ -11,8 +11,8 @@ y el manifiesto del Bronze.
 
 Cada dia faltante se clasifica por lo que hay que hacer para recuperarlo:
 
-    maestro        antes de 2025: viene de CMG_DB  -> cmg migrar-historico
-    sin_descargar  desde 2025, sin ZIP en el Bronze -> cmg descargar-cen
+    maestro        antes de 2024-08: viene de CMG_DB  -> cmg migrar-historico
+    sin_descargar  desde 2024-08, sin ZIP en el Bronze -> cmg descargar-cen
     sin_ingerir    hay ZIP pero no esta en Silver  -> cmg ingerir-pagina
 """
 

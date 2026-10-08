@@ -1,7 +1,7 @@
 """Fuente (b): mapear los ZIP de la pagina del Coordinador al esquema canonico.
 
-Solo **2025-01 en adelante** (CLAUDE.md 0.1). Lo anterior viene del Maestro, y
-esta capa se niega a tocarlo aunque el Bronze tenga ZIP de 2024.
+Solo **2024-08 en adelante** (`coordinador_cmg.INICIO_FUENTE`, CLAUDE.md 0.1).
+Lo anterior viene del Maestro, y esta capa se niega a tocarlo aunque el Bronze tenga ZIP de 2024.
 
 De cada ZIP se usa un solo archivo, `CmgBarrasComparativo_AAAAMMDD_AAAAMMDD_15.csv`,
 con estas reglas verificadas sobre archivos reales (CLAUDE.md 4.5):
@@ -45,34 +45,43 @@ ORIGEN_POR_TIPO = {
     "pre": esquema.ORIGEN_PAGINA_PRE,
 }
 
-#: Para elegir entre varios archivos del mismo dia. Igual que `cen.mejor_version`.
-_RANGO_TIPO = {"def": 2, "pre": 1}
+
+def dias_dudosos(
+    manifiesto: dict[str, cen.EntradaManifiesto],
+) -> dict[date, list[str]]:
+    """Dias con algun archivo que no se pudo clasificar (tipo "desconocido").
+
+    En ese dia NO se elige nada automaticamente: el archivo raro podria ser la
+    version vigente (un v2) y usar otra seria cargar un dato viejo EN SILENCIO.
+    Paso de verdad: con el lector anterior, en 34 dias se habria elegido una
+    version superada. La ingesta los omite y los reporta para revision manual.
+    """
+    dudosos: dict[date, list[str]] = {}
+    for e in manifiesto.values():
+        if e["tipo"] not in cen.RANGO_TIPO:
+            dudosos.setdefault(date.fromisoformat(e["fecha_operacion"]), []).append(e["nombre"])
+    return dudosos
 
 
 def elegir_por_dia(
     manifiesto: dict[str, cen.EntradaManifiesto],
 ) -> dict[date, cen.EntradaManifiesto]:
-    """El archivo que manda para cada dia, desde 2025.
+    """El archivo que manda para cada dia, desde el inicio de la fuente.
 
-    `def` gana a `pre`; entre iguales, mayor version y luego mayor reemision.
-    Los archivos de tipo desconocido no se usan: primero hay que catalogarlos
-    (los reporta `quality/deriva.py`).
+    La regla es `cen.clave_version`: `def` gana a `pre`; despues mayor version,
+    mayor reemision y, si empatan, el publicado despues. Los dias de
+    `dias_dudosos` se dejan fuera.
     """
+    dudosos = dias_dudosos(manifiesto)
     elegidos: dict[date, cen.EntradaManifiesto] = {}
     for e in manifiesto.values():
-        if e["tipo"] not in _RANGO_TIPO:
-            continue
         dia = date.fromisoformat(e["fecha_operacion"])
-        if dia < PRIMER_DIA:
+        if dia < PRIMER_DIA or dia in dudosos:
             continue
         actual = elegidos.get(dia)
-        if actual is None or _rango(e) > _rango(actual):
+        if actual is None or cen.clave_version(e) > cen.clave_version(actual):
             elegidos[dia] = e
     return dict(sorted(elegidos.items()))
-
-
-def _rango(e: cen.EntradaManifiesto) -> tuple[int, int, int]:
-    return (_RANGO_TIPO[e["tipo"]], e["version"], e["reemision"])
 
 
 def extraer_comparativo(ruta_zip: Path, destino: Path) -> Path:

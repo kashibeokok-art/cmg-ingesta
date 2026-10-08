@@ -201,7 +201,7 @@ def test_actualizar_con_fecha_escrita(data_dir: Path, llamadas: dict[str, Any]) 
 def test_actualizar_rechaza_fechas_fuera_de_la_fuente(
     data_dir: Path, llamadas: dict[str, Any]
 ) -> None:
-    g = Guion("2024-12-31", "2026-10-07", "ayer", "v")
+    g = Guion("2024-07-31", "2026-10-07", "ayer", "v")
     app.actualizar(contexto_red(data_dir, g))
 
     assert "vienen del Maestro" in g.texto

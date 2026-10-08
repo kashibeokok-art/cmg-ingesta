@@ -117,7 +117,7 @@ def ingerir_pagina(
     avisar: Avisar = _nada,
     forzar: bool = False,
 ) -> tuple[list[FilaReporteCen], list[deriva.Hallazgo]]:
-    """Ingiere a Silver los meses de 2025 en adelante que tengan ZIP en `bronze`.
+    """Ingiere a Silver los meses desde el inicio de la fuente (2024-08) con ZIP en `bronze`.
 
     `staging` es donde se extraen temporalmente los CSV (se borran al terminar
     cada mes). Con `forzar=True` se reescriben todos los meses aunque su huella
@@ -125,8 +125,15 @@ def ingerir_pagina(
 
     Devuelve una fila de reporte por mes procesado y los hallazgos de deriva.
     """
-    elegidos = pagina_cen.elegir_por_dia(cen.leer_manifiesto(bronze))
-    if not elegidos:
+    manifiesto = cen.leer_manifiesto(bronze)
+    elegidos = pagina_cen.elegir_por_dia(manifiesto)
+    dudosos_por_mes: dict[Mes, list[str]] = {}
+    for dia, nombres in sorted(pagina_cen.dias_dudosos(manifiesto).items()):
+        if dia >= pagina_cen.PRIMER_DIA:
+            dudosos_por_mes.setdefault((dia.year, dia.month), []).append(
+                f"{dia}: archivo sin clasificar ({', '.join(sorted(nombres))}); revisar a mano"
+            )
+    if not elegidos and not dudosos_por_mes:
         raise ValueError(
             f"no hay archivos desde {pagina_cen.PRIMER_DIA} en {bronze}. "
             "Corre primero:  cmg descargar-cen --desde AAAA-MM-DD"
@@ -136,23 +143,32 @@ def ingerir_pagina(
     if huerfanas:
         avisar(f"se limpiaron {huerfanas} carpeta(s) temporal(es) de una corrida previa")
 
-    dias_todos = list(elegidos)
-    checks.crear_tabla_calendario(con, dias_todos[0], dias_todos[-1])
+    if elegidos:
+        dias_todos = list(elegidos)
+        checks.crear_tabla_calendario(con, dias_todos[0], dias_todos[-1])
 
     estado = leer_estado(bronze)
     reporte: list[FilaReporteCen] = []
     hallazgos: list[deriva.Hallazgo] = []
     staging.mkdir(parents=True, exist_ok=True)
 
-    for mes, dias in por_mes(elegidos).items():
+    meses = por_mes(elegidos)
+    for mes in sorted(set(meses) | set(dudosos_por_mes)):
+        dias = meses.get(mes, [])
+        dudosos = dudosos_por_mes.get(mes, [])
         firma = huella(dias)
-        if not forzar and estado.get(_clave(mes)) == firma:
+        if not forzar and not dudosos and estado.get(_clave(mes)) == firma:
             avisar(f"{_clave(mes)}: sin cambios, se omite")
             continue
 
-        with tempfile.TemporaryDirectory(dir=staging) as tmp:
-            fila, h = _ingerir_mes(con, bronze, destino, Path(tmp), mes, dias)
-        hallazgos += h
+        if dias:
+            with tempfile.TemporaryDirectory(dir=staging) as tmp:
+                fila, h = _ingerir_mes(con, bronze, destino, Path(tmp), mes, dias)
+            hallazgos += h
+        else:  # solo dias dudosos: no se escribe nada, se reporta
+            fila = _fila(mes, 0, 0, [], 0, 0, None)
+        # un dia dudoso no entra y deja el mes sin huella: se reintenta la proxima vez
+        fila["omitidos"] = dudosos + fila["omitidos"]
         reporte.append(fila)
 
         # sin omitidos se guarda la huella; con omitidos, se reintenta la proxima vez

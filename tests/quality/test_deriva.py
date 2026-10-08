@@ -8,6 +8,7 @@ Tres clases de test:
 - AUTO-ACTUALIZACION: un año nuevo en el indice se adopta solo.
 """
 
+import io
 import json
 import zipfile
 from datetime import date, timedelta
@@ -38,6 +39,7 @@ class RespuestaFalsa:
         self.status_code = status_code
         self.text = texto
         self.content = contenido
+        self.headers: dict[str, str] = {}
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
@@ -166,10 +168,14 @@ def test_las_paginas_reales_no_generan_hallazgos(fixture: str, dia: date) -> Non
     assert deriva.revisar_pagina_dia(dia, pagina, cen.parsear_documentos(pagina, dia)) == []
 
 
-def _pagina_con(href: str, fecha: str = "Fecha de publicaci&oacute;n: 22/01/2026") -> str:
+def _pagina_con(
+    href: str,
+    fecha: str = "Fecha de publicaci&oacute;n: 22/01/2026",
+    etiqueta: str = "Antecedentes Costo Marginal Real Definitivo",
+) -> str:
     return f"""
     <div style="border-top: 1px solid #E3E3E3;">
-      <span class="informes-estudio-Titulo" title="Algo">Algo</span>
+      <span class="informes-estudio-Titulo" title="{etiqueta}">{etiqueta}</span>
       <span class="documentos-Publicar-Fecha">{fecha}</span>
       <a href="{href}" class="cen_btn cen_btn-primary">Descargar ZIP</a>
     </div>"""
@@ -183,7 +189,50 @@ def test_un_nombre_no_catalogado_se_avisa() -> None:
     pagina = _pagina_con(UP + "Antecedentes_CMG_Real_def_260115_final.zip")
     h = deriva.revisar_pagina_dia(dia, pagina, cen.parsear_documentos(pagina, dia))
     assert severidad_de(h, "nombre_no_catalogado") == "aviso"
-    assert "parece 'def'" in next(x["detalle"] for x in h if x["tipo"] == "nombre_no_catalogado")
+    assert "etiqueta" in next(x["detalle"] for x in h if x["tipo"] == "nombre_no_catalogado")
+
+
+def test_nombre_y_etiqueta_ilegibles_es_critico() -> None:
+    """Sin ninguna de las dos fuentes no se sabe que version es: el dia no se ingiere."""
+    dia = date(2026, 1, 15)
+    pagina = _pagina_con(UP + "Antecedentes_CMG_Real_def_260115_final.zip", etiqueta="Algo")
+    h = deriva.revisar_pagina_dia(dia, pagina, cen.parsear_documentos(pagina, dia))
+    assert severidad_de(h, "nombre_no_catalogado") == "critico"
+    assert "etiqueta_no_reconocida" in tipos(h)
+
+
+def test_nombre_y_etiqueta_que_se_contradicen_se_avisa() -> None:
+    dia = date(2026, 1, 15)
+    pagina = _pagina_con(
+        UP + "Antecedentes_CMG_Real_def_260115.zip",
+        etiqueta="Antecedentes Costo Marginal Real Definitivo v2",
+    )
+    docs = cen.parsear_documentos(pagina, dia)
+    h = deriva.revisar_pagina_dia(dia, pagina, docs)
+    assert "nombre_y_etiqueta_distintos" in tipos(h)
+    assert (docs[0]["tipo"], docs[0]["version"]) == ("def", 2)  # manda la etiqueta
+
+
+def test_nombre_sin_fecha_se_informa_y_usa_la_de_la_pagina() -> None:
+    """Caso real: Antecedentes_CMG_Real_pre.zip en la pagina del 2025-02-11."""
+    dia = date(2025, 2, 11)
+    pagina = _pagina_con(
+        UP + "Antecedentes_CMG_Real_pre.zip",
+        etiqueta="Antecedentes Costo Marginal Real Preliminar",
+    )
+    docs = cen.parsear_documentos(pagina, dia)
+    h = deriva.revisar_pagina_dia(dia, pagina, docs)
+    assert severidad_de(h, "nombre_sin_fecha") == "info"
+    assert docs[0]["fecha_operacion"] == "2025-02-11"
+
+
+def test_fecha_del_nombre_ilegible_se_avisa() -> None:
+    """Caso real: Antecedentes_CMG_Real_def_25406.zip (5 digitos) del 2025-04-06."""
+    dia = date(2025, 4, 6)
+    pagina = _pagina_con(UP + "Antecedentes_CMG_Real_def_25406.zip")
+    h = deriva.revisar_pagina_dia(dia, pagina, cen.parsear_documentos(pagina, dia))
+    assert severidad_de(h, "fecha_del_nombre_ilegible") == "aviso"
+    assert "nombre_no_catalogado" not in tipos(h)
 
 
 def test_una_fecha_de_publicacion_que_no_se_encuentra_se_avisa() -> None:
@@ -587,20 +636,58 @@ def test_reporte_escribe_md_y_json_ordenados(tmp_path: Path) -> None:
     assert texto.index("[CRITICO]") < texto.index("[INFO]")
 
 
+def zip_valido(texto: str = "x") -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("contenido.txt", texto)
+    return buf.getvalue()
+
+
 def test_sincronizar_vigilando_detecta_y_descarga_igual(tmp_path: Path) -> None:
-    """Un nombre no catalogado se reporta, pero el archivo NO se pierde."""
+    """Un nombre no catalogado se reporta, pero el archivo NO se pierde, y el tipo
+    sale de la etiqueta."""
     dia = date(2026, 1, 15)
     url_zip = UP + "Antecedentes_CMG_Real_def_260115_final.zip"
     sesion = SesionFalsa(
         paginas={cen.url_dia(dia): _pagina_con(url_zip)},
-        zips={url_zip: b"PK\x03\x04no-es-un-zip-de-verdad"},
+        zips={url_zip: zip_valido()},
     )
     nuevos, h = deriva.sincronizar_vigilando(dia, dia, tmp_path, sesion, pausa=1.0)
 
     assert [n["nombre"] for n in nuevos] == ["Antecedentes_CMG_Real_def_260115_final.zip"]
+    assert nuevos[0]["tipo"] == "def"
     assert (tmp_path / "Antecedentes_CMG_Real_def_260115_final.zip").exists()
     assert "nombre_no_catalogado" in tipos(h)
-    assert "zip_corrupto" in tipos(h)  # y ademas se inspecciono el contenido
+    assert (
+        "comparativo_ausente" in tipos(h)
+        or "miembro_requerido_ausente" in tipos(h)
+        or any(x["severidad"] == "critico" for x in h)
+    )  # y ademas se inspecciono el contenido del ZIP
+
+
+def test_un_zip_que_sigue_llegando_mal_no_se_registra(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Se reintenta; si sigue corrupto, se avisa y NO entra al manifiesto (se reintenta
+    en la proxima corrida). Los demas archivos del rango siguen bajando."""
+    monkeypatch.setattr("time.sleep", lambda _s: None)
+    dia = date(2026, 1, 15)
+    malo = UP + "Antecedentes_CMG_Real_def_260115.zip"
+    bueno = UP + "Antecedentes_CMG_Real_pre_260115.zip"
+    pagina = _pagina_con(malo) + _pagina_con(
+        bueno, etiqueta="Antecedentes Costo Marginal Real Preliminar"
+    )
+    sesion = SesionFalsa(
+        paginas={cen.url_dia(dia): pagina},
+        zips={malo: b"PK\x03\x04no-es-un-zip-de-verdad", bueno: zip_valido()},
+    )
+    nuevos, h = deriva.sincronizar_vigilando(dia, dia, tmp_path, sesion, pausa=1.0)
+
+    assert [n["nombre"] for n in nuevos] == ["Antecedentes_CMG_Real_pre_260115.zip"]
+    assert "Antecedentes_CMG_Real_def_260115.zip" not in cen.leer_manifiesto(tmp_path)
+    assert not (tmp_path / "Antecedentes_CMG_Real_def_260115.zip").exists()
+    assert severidad_de(h, "zip_no_descargado") == "aviso"
+    assert sesion.pedidos.count(malo) == cen.REINTENTOS
 
 
 def test_vigilar_fuente_avisa_si_no_hay_publicaciones(tmp_path: Path) -> None:
@@ -626,7 +713,7 @@ def test_vigilar_fuente_revisa_la_completitud_desde_el_inicio_de_la_fuente(
     TAMBIEN el hueco anterior al primer archivo descargado.
 
     REGRESION (2026-10-08): antes se medía desde el primer dia del manifiesto, asi que
-    2025-01-01..2026-01-09 no existia para el programa.
+    el tramo anterior a 2026-01-10 no existia para el programa.
     """
     m = manifiesto(entrada(date(2026, 1, 10)), entrada(date(2026, 1, 15)))
     cen.guardar_manifiesto(tmp_path, m)
@@ -637,7 +724,7 @@ def test_vigilar_fuente_revisa_la_completitud_desde_el_inicio_de_la_fuente(
     h = deriva.vigilar_fuente(sesion, tmp_path, hasta=dia, dias=1, pausa=1.0, hoy=HOY)
     sin_registro = [x for x in h if x["tipo"] == "dia_sin_registro"]
     assert [x["evidencia"] for x in sin_registro] == [
-        "2025-01-01 a 2026-01-09",
+        "2024-08-01 a 2026-01-09",
         "2026-01-11 a 2026-01-14",
     ]
 
@@ -645,9 +732,9 @@ def test_vigilar_fuente_revisa_la_completitud_desde_el_inicio_de_la_fuente(
 def test_vigilar_fuente_sin_nada_descargado_avisa_todo_el_hueco(tmp_path: Path) -> None:
     """Con el manifiesto vacio antes no se revisaba la completitud en absoluto."""
     sesion = SesionFalsa({cen.INDICE: html("indice_anios.html")})
-    h = deriva.vigilar_fuente(sesion, tmp_path, hasta=date(2025, 1, 10), dias=1, pausa=1.0, hoy=HOY)
+    h = deriva.vigilar_fuente(sesion, tmp_path, hasta=date(2024, 8, 10), dias=1, pausa=1.0, hoy=HOY)
     sin_registro = [x["evidencia"] for x in h if x["tipo"] == "dia_sin_registro"]
-    assert sin_registro == ["2025-01-01 a 2025-01-10"]
+    assert sin_registro == ["2024-08-01 a 2024-08-10"]
 
 
 def test_sincronizar_vigilando_avisa_un_dia_que_el_cen_no_publico(tmp_path: Path) -> None:
@@ -665,7 +752,7 @@ def test_sincronizar_vigilando_informa_el_avance(tmp_path: Path) -> None:
     url_zip = UP + "Antecedentes_CMG_Real_def_260115.zip"
     sesion = SesionFalsa(
         paginas={cen.url_dia(dia): _pagina_con(url_zip)},
-        zips={url_zip: b"PK\x03\x04no-es-un-zip-de-verdad"},
+        zips={url_zip: zip_valido()},
     )
     lineas: list[str] = []
     deriva.sincronizar_vigilando(dia, dia, tmp_path, sesion, pausa=1.0, avisar=lineas.append)

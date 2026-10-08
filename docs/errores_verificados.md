@@ -163,6 +163,42 @@ y `PPA_` en `ppa-pipeline`. Si una entrada aplica solo a un proyecto, decirlo ex
   que yo mismo había documentado, aplicado al calendario de días en vez de al de cuartos. Y un
   test que arma el escenario "con hueco" debe esperar que el hueco **se vea**.
 
+### A12. "Idempotente" no es "retomable": el manifiesto se guardaba solo al final
+- **Error:** `sincronizar` escribe cada ZIP a disco al bajarlo, pero guarda el manifiesto **una
+  sola vez, al terminar** (`if nuevos: guardar_manifiesto(...)`). Y no hay reintentos: un error
+  HTTP corta la corrida (`tenacity` está en las dependencias pero no se usa). Lo documenté como
+  idempotente, y lo es, pero solo cuando la corrida **termina**.
+- **Evidencia (2026-10-08, simulación sin red, `scratchpad/prueba_corte.py`):** 3 días, un 503 en
+  el tercer ZIP → los dos primeros quedan en disco, **manifiesto inexistente**; la segunda corrida
+  vuelve a pedir **los tres**. El menú (opción 4) promete "se puede interrumpir con Ctrl+C y
+  retomar después", que con un backfill de ~1.600 ZIP / ~20 GB es falso en la práctica.
+- **Lección:** idempotencia (repetir no cambia el resultado) y reanudabilidad (lo hecho no se
+  pierde si se corta) son propiedades distintas. Un proceso largo tiene que **persistir el avance
+  por unidad de trabajo** (aquí, por ZIP) y probarse **cortándolo a la mitad**, no solo
+  corriéndolo dos veces completo.
+- **Estado: CORREGIDO 2026-10-08.** Cada ZIP se escribe como `.part`, se verifica
+  (`problema_del_zip`: tamaño y `testzip`), se renombra y se anota; el manifiesto se guarda tras
+  cada archivo. `pedir` reintenta 429/5xx/timeout con espera creciente. Regresión:
+  `test_descarga_robusta.py::test_un_corte_a_mitad_no_obliga_a_bajar_de_nuevo`.
+
+### A13. Suponer que una fuente es "la confiable" sin contrastarla
+- **Error:** al ver que las etiquetas de la página tenían solo 7 formas (contra 26 del nombre),
+  decidí que la etiqueta mandaba en tipo **y versión**. Contrastadas las dos fuentes en los 1.765
+  casos reales, chocan 14 veces: en 13 el nombre dice `v2` y la etiqueta lo **omite**; en 1 el
+  tipo choca y la secuencia de publicación le da la razón a la etiqueta.
+- **Corrección:** tipo de la etiqueta, versión la **mayor** de las dos, reemisión del nombre
+  (`cen.clasificar_documento`). Cada choque queda como aviso.
+- **Lección:** "más regular" no es "más correcta". Cuando hay dos fuentes del mismo dato, se mide
+  dónde discrepan **antes** de elegir una, y la regla se escribe con esos casos como test.
+
+### A14. Una cifra escrita de memoria en un informe
+- **Error:** escribí "22 definitivos v2 de agosto 2026 (días 10 al 31)" sin contarlos. Eran 28
+  revisiones en ese sub-sitemap (27 v2 y 1 v3), de 21 días de agosto. También di "34 días con
+  versión equivocada" desde un conteo aproximado; la comparación exacta lector viejo contra nuevo
+  da **32** (5 con preliminar en vez de definitivo).
+- **Lección:** toda cifra de un informe sale de un script cuyo resultado está a la vista, y si
+  esa cifra va a un test, el test la verifica (fue un test el que atrapó el 21).
+
 ---
 
 ## B. Procesamiento de datos (del código que se está portando)

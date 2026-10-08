@@ -316,6 +316,39 @@ con hueco y esperaban que se ignorara. Un test confirma lo que tú creías que e
 creencia está mal, el test también. Por eso un escenario "con hueco" debe esperar que el hueco
 **se vea**.
 
+### 5c. Lo que cambió el 2026-10-08: descarga robusta y revisiones
+
+Un escaneo del sitio (797 días, 1.765 ZIP) y un informe técnico encontraron cuatro fallas. Esto
+es lo que se corrigió y la idea detrás de cada arreglo:
+
+| Falla | Arreglo | Concepto |
+|---|---|---|
+| Un corte a mitad obligaba a bajar todo de nuevo (A12) | El manifiesto se guarda **tras cada ZIP**; el ZIP se escribe como `.part` y se renombra solo si llegó sano | *Reanudable* no es lo mismo que *idempotente* |
+| Un 503 pasajero cortaba la corrida | `pedir`: reintenta 429/5xx/timeout con espera 2, 4, 8 s; nunca un 403/404 | *Backoff exponencial*, *fallas transitorias* |
+| 66 nombres no se reconocían → en 32 días se usaba una versión vieja | Lector tolerante + etiqueta de la página (`clasificar_documento`); los 1.765 nombres reales son un test | *Dos fuentes: medir dónde discrepan antes de elegir* (A13) |
+| Las revisiones v2/v3 llegan semanas después y no se veían | `sitemap_cen`: el sitemap del sitio dice qué documento cambió y cuándo | *Detección de cambios por metadatos* en vez de barrido |
+
+```python
+# sincronizar, el corazón del arreglo A12
+parcial.write_bytes(datos)                 # 1. a un archivo temporal
+reemplazar_atomico(parcial, destino)       # 2. de un golpe a su nombre final
+manifiesto[doc["nombre"]] = entrada
+guardar_manifiesto(carpeta, manifiesto)    # 3. registrado YA, no al final
+```
+
+### 🔬 Caso práctico 4c — rómpelo
+
+Saca `guardar_manifiesto(...)` de dentro del bucle y ponlo después, como estaba antes
+(`if nuevos: guardar_manifiesto(carpeta, manifiesto)` antes del `return`).
+
+```powershell
+uv run pytest tests/extract/test_descarga_robusta.py -q
+```
+
+Falla `test_un_corte_a_mitad_no_obliga_a_bajar_de_nuevo`: con un 503 en el tercer ZIP, los dos
+primeros quedan en disco pero **sin registrar**, y la segunda corrida los vuelve a pedir. Correr
+el proceso dos veces completo nunca habría mostrado esto; hay que **cortarlo a la mitad**.
+
 ---
 
 ## 6. M5: la trampa de los ceros

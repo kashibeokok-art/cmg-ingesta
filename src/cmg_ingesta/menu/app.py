@@ -386,16 +386,22 @@ def actualizar(ctx: Contexto) -> None:
     if dias > 31:
         c.decir(
             f"  Es una descarga grande: del orden de {dias * 2 / 60:.0f} min y "
-            f"{dias * 25 / 1024:.1f} GB. Se puede interrumpir con Ctrl+C y retomar despues."
+            f"{dias * 25 / 1024:.1f} GB. Se puede interrumpir con Ctrl+C: al retomar "
+            "no se vuelve a bajar lo ya bajado."
         )
     if not c.confirmar("  ¿Continuar?"):
         c.decir("  Cancelado.")
         return
 
     c.decir("")
-    nuevos, hallazgos = deriva.sincronizar_vigilando(
-        desde, ayer, ctx.bronze_cen, ctx.nueva_sesion(), hoy=hoy, avisar=c.decir
-    )
+    try:
+        nuevos, hallazgos = deriva.sincronizar_vigilando(
+            desde, ayer, ctx.bronze_cen, ctx.nueva_sesion(), hoy=hoy, avisar=c.decir
+        )
+    except cen.ErrorDescarga as e:
+        c.decir(f"\n  El sitio no respondio: {e}")
+        c.decir("  Lo ya descargado quedo registrado. Vuelve a elegir esta opcion para retomar.")
+        return
     c.decir(f"\n  {len(nuevos)} archivo(s) nuevo(s). Pasando a la base...")
 
     con = ctx.abrir()

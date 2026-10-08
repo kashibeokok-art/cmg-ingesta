@@ -20,13 +20,18 @@ archivo **antes de seguir**. No esperar a que el usuario lo pida.
 
 | | Fuente | Periodo | Para qué |
 |---|---|---|---|
-| **a** | **`CMG_DB` (el Maestro ya procesado)** | **2021-01 → 2024-12** | el histórico |
-| **b** | **Request de la página** de Transferencias Económicas → Costo Marginal Real | **2025-01 en adelante** | todo lo nuevo |
+| **a** | **`CMG_DB` (el Maestro ya procesado)** | **2021-01 → 2024-07** | el histórico |
+| **b** | **Request de la página** de Transferencias Económicas → Costo Marginal Real | **2024-08 en adelante** | todo lo nuevo |
+
+**🔁 Corte movido a 2024-08-01 (decisión del usuario, 2026-10-08).** Se borraron de Silver
+2024-08 → 2024-12 del Maestro (5 meses, 22.313.344 filas; siguen en `CMG_DB` si hiciera falta).
+En código: `coordinador_cmg.INICIO_FUENTE = 2024-08-01` y `cmg_db.ULTIMO_MES = (2024, 7)`; un
+test exige que queden pegados. La página de 2024 solo publica de julio en adelante.
 
 **Todo lo demás queda fuera**, por decisión explícita: la API `costo-marginal-real/v4`
 (pierde la hora DST, §4.5.2) y los ZIP mensuales de Plabacom.
 
-**El corte en 2024-12-31** (decisión del usuario, 2026-10-05) resuelve el problema de procedencia:
+**El corte original en 2024-12-31** (decisión del usuario, 2026-10-05) resolvía el problema de procedencia:
 los timestamps de las particiones de `CMG_DB` muestran que 2021-01 → 2026-03 se escribieron en un
 **único bloque** (el Maestro), y que 2026-04/05, 2026-06 y 2026-07 se agregaron por separado — el
 último desde `cmg2607_15min_formateado.zip`, que es un ZIP y por tanto fuente descartada.
@@ -764,7 +769,37 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho
   lo nuevo no se toca. Excepción acotada a la regla "no se normaliza nada" de §0.6, decidida por
   el usuario.
 
+- **ADR-H09 · 2026-10-08 · Revisiones por sitemap, no por barrido.** El `sitemap.xml` del
+  sitio lista cada documento con su `lastmod`; ponerse al día cuesta 1 + N peticiones (N = sub-
+  sitemaps modificados, normalmente 1–4) en vez de ~800 páginas. El punto de partida se guarda en
+  `bronze/cen_cmg/sitemap.json` y solo avanza cuando la descarga termina bien. Respaldo si el
+  sitemap falla: barrido completo `cmg descargar-cen --desde 2024-08-01` (~36 min sin ZIP nuevos).
+- **ADR-H10 · 2026-10-08 · Tipo y versión: etiqueta + nombre.** Tipo de la etiqueta, versión la
+  mayor de las dos, reemisión del nombre. Medido en 1.765 casos reales (A13).
+
 ## 8. Bitácora
+
+### 2026-10-08 — Sesión 6: búsqueda y descarga robustas
+- **Corte de fuentes a 2024-08-01** (decisión del usuario): `INICIO_FUENTE = 2024-08-01`,
+  `cmg_db.ULTIMO_MES = (2024, 7)`; se borraron de Silver 2024-08..12 del Maestro (22.313.344
+  filas; siguen en `CMG_DB`). Silver del Maestro queda con **43 meses** (2021-01..2024-07); la
+  cifra "48 meses / 140.272 filas por barra" de la sesión 5b es anterior al corte. Los renombres
+  Ñ→N no cambian: LASARAÑAS cambia en 2024-07, aún dentro del Maestro, y la página aplica
+  `barras.sql_canonico` igual.
+- **Escaneo del sitio** (solo páginas, 851 peticiones, 0 errores): 797 días, 1.765 ZIP, 26 formas
+  de nombre, 7 de etiqueta. Catálogo en `tests/fixtures/nombres_reales.tsv`.
+- **Informe de búsqueda y descarga** publicado como Artifact (claude.ai). Problemas P1–P10.
+- **Correcciones:** `pedir` (reintentos), `bajar_zip`/`problema_del_zip` (verificación),
+  manifiesto por ZIP (A12), lector de nombres tolerante + etiqueta (`clasificar_documento`, A13),
+  `clave_version` con desempate por fecha de publicación, días dudosos fuera de la ingesta,
+  `DIAS_MAX_PRE` 15 → 25, filtro sin mayúsculas, **revisiones por sitemap**
+  (`extract/sitemap_cen.py`, ADR-H09). CLI y menú: `ErrorDescarga` con mensaje para retomar.
+- Lector viejo vs nuevo sobre los datos reales: no reconocidos 66 → 0; **32 días** cambian de
+  archivo elegido, 5 de ellos usaban un preliminar habiendo definitivo.
+- En vivo: desde 2026-10-06, **44 revisiones** (37 definitivos v2) en 5 peticiones / 12 s.
+- 552 tests. Errores registrados: A12 (corregido), A13, A14.
+- **No implementado:** M6 (detectar reemplazos con el mismo nombre: riesgo no observado) y M7
+  (bajar solo la mejor versión: decisión de negocio del usuario).
 
 ### 2026-10-08 — Sesión 5b: barras renombradas (sesión paralela a la 5)
 - El usuario confirmó que `PEÑABLANCA` y `PENABLANCA` son la misma barra. Al revisar apareció

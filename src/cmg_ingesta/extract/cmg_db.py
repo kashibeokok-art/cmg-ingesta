@@ -1,7 +1,7 @@
 """Fuente (a): migrar el historico desde la base antigua `CMG_DB`.
 
-Solo **2021-01 a 2024-12**, que es el tramo que viene inequivocamente del Archivo
-Maestro (CLAUDE.md 0.1). Lo de 2025 en adelante se trae de la pagina.
+Solo **2021-01 a 2024-07** (CLAUDE.md 0.1). Desde 2024-08 manda la pagina del
+Coordinador (decision del usuario, 2026-10-08): el Maestro de esos meses no se usa.
 
 Que hace la migracion, ademas de copiar:
 
@@ -29,7 +29,7 @@ from cmg_ingesta.domain.periodo import Mes
 
 #: El tramo del Maestro. Mas alla de esto, CMG_DB mezcla fuentes descartadas.
 PRIMER_MES: Mes = (2021, 1)
-ULTIMO_MES: Mes = (2024, 12)
+ULTIMO_MES: Mes = (2024, 7)  # el mes anterior a coordinador_cmg.INICIO_FUENTE
 
 
 def _lit(ruta: Path) -> str:
