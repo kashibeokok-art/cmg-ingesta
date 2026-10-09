@@ -68,7 +68,7 @@ Modo mentor (§2): Claude diseña, explica y revisa; **el usuario escribe el có
 ```
 cmg descargar-cen --desde 2025-01-01      # Bronze: ZIP + manifiesto (idempotente)
 cmg ingerir-pagina                        # Silver: solo los meses que cambiaron
-cmg vigilar-fuente                        # tarea programada: exit 2 = revisar data/alertas/
+cmg vigilar-fuente                        # tarea programada: exit 3 = revisar data/alertas/
 ```
 
 **Pendiente con el usuario:** el **backfill real 2025-01 → hoy** (~640 días, ~1.300 ZIP, ~16 GB,
@@ -789,6 +789,14 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho
   (pedido del usuario: "los documentos pueden tener varias revisiones").
 
 ## 8. Bitácora
+
+### 2026-10-09 — Sesión 7b: códigos de salida
+- Detectado en la revisión de `cli.py`: click sale con **2** en sus errores de uso (falta
+  `--desde`, `--pausa abc`, comando inexistente), el mismo código que los hallazgos. Una tarea
+  programada mal escrita se leía como "hay hallazgos" (→ A15).
+- Ahora: 0 bien · 1 no se pudo cumplir · **2 comando mal escrito** (click o el programa) ·
+  **3 hallazgos**. `cli._uso`, `_validar_pausa` y `_periodo` (periodo mal escrito → 2; bien escrito
+  pero sin datos → 1). 588 tests.
 
 ### 2026-10-09 — Sesión 7: catálogo editable y línea base
 - Pedido del usuario: un diccionario editable de formas de nombre, un registro de los enlaces

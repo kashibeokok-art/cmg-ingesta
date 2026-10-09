@@ -10,13 +10,21 @@ imposible de testear y de automatizar.
 
 Codigos de salida (exit codes), para que un Task Scheduler o un CI sepan que paso:
     0  todo bien
-    1  error de uso o del programa
-    2  termino, pero las validaciones encontraron problemas
+    1  el pedido estaba bien escrito, pero no se pudo cumplir (sitio caido, base
+       vacia, barra sin datos...)
+    2  el comando esta mal escrito: falta una opcion, una fecha no se entiende...
+    3  termino, pero las validaciones encontraron algo que revisar (data/alertas/)
+
+El 2 no es una eleccion libre: es el codigo que usa click (la libreria debajo de
+typer) para los errores de uso que detecta ANTES de entrar a la funcion, y es la
+convencion de los programas de consola. Antes los hallazgos tambien salian con 2,
+y una tarea programada mal escrita se confundia con "hay hallazgos" (error A15).
+Por eso los errores de uso que detecta el propio programa tambien salen con 2.
 """
 
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, NoReturn
 
 import duckdb
 import typer
@@ -35,7 +43,8 @@ from cmg_ingesta.silver import leer
 
 SALIDA_OK = 0
 SALIDA_ERROR = 1
-SALIDA_CON_HALLAZGOS = 2
+SALIDA_USO = 2  # el mismo que usa click para "Missing option", "not a valid float"...
+SALIDA_CON_HALLAZGOS = 3
 
 MENSAJE_RETOMAR = (
     "Lo ya descargado quedo registrado. Vuelve a correr el mismo comando para retomar: "
@@ -76,11 +85,46 @@ def _cobertura(con: duckdb.DuckDBPyConnection, cfg: Settings) -> cobertura.Cober
     )
 
 
+def _uso(mensaje: str) -> NoReturn:
+    """Termina por un comando mal escrito: mismo codigo que los errores de click."""
+    typer.echo(mensaje, err=True)
+    raise typer.Exit(SALIDA_USO)
+
+
 def _fecha(texto: str) -> date:
     try:
         return datetime.strptime(texto, "%Y-%m-%d").date()
+    except ValueError:
+        _uso(f"Fecha invalida '{texto}'. Formato esperado: AAAA-MM-DD.")
+
+
+def _validar_pausa(pausa: float) -> None:
+    if pausa < cen.PAUSA_MINIMA:
+        _uso(f"--pausa debe ser al menos {cen.PAUSA_MINIMA} s (el sitio es de un tercero).")
+
+
+#: Un rango amplisimo: para saber si un periodo esta BIEN ESCRITO, sin importar
+#: que meses tenga la base.
+_TODO: tuple[periodo.Mes, periodo.Mes] = ((2000, 1), (2100, 12))
+
+
+def _periodo(
+    texto: str, primero: periodo.Mes, ultimo: periodo.Mes
+) -> tuple[periodo.Mes, periodo.Mes]:
+    """El periodo pedido. Mal escrito -> 2 (uso); bien escrito pero sin datos -> 1.
+
+    `parsear_periodo` lanza ValueError en los dos casos. Para separarlos sin leer
+    el mensaje de error, primero se lee contra un rango amplisimo: si falla ahi,
+    el problema es como se escribio.
+    """
+    try:
+        periodo.parsear_periodo(texto, *_TODO)
     except ValueError as e:
-        typer.echo(f"Fecha invalida '{texto}'. Formato esperado: AAAA-MM-DD.", err=True)
+        _uso(f"Error: {e}")
+    try:
+        return periodo.parsear_periodo(texto, primero, ultimo)
+    except ValueError as e:
+        typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(SALIDA_ERROR) from e
 
 
@@ -160,8 +204,7 @@ def migrar_historico(
     """Migra el historico 2021-01 a 2024-07 desde CMG_DB, validando el calendario."""
     cfg = _settings()
     if not origen.is_dir():
-        typer.echo(f"No existe la carpeta: {origen}", err=True)
-        raise typer.Exit(SALIDA_ERROR)
+        _uso(f"No existe la carpeta: {origen}")
 
     destino = conexion.ruta_silver(cfg.data_dir)
     con = conexion.abrir(cfg.data_dir)
@@ -228,13 +271,18 @@ def descargar(
     ] = "excel",
 ) -> None:
     """Exporta el CMg quinceminutal de una barra, con el resumen por bloques."""
+    formatos = tuple(f.strip() for f in formato.split(",") if f.strip())
+    desconocidos = sorted(set(formatos) - set(exportar.FORMATOS))
+    if not formatos or desconocidos:
+        _uso(
+            f"Error: formato no soportado: {desconocidos}. Validos: {', '.join(exportar.FORMATOS)}"
+        )
     cfg = _settings()
     base = conexion.ruta_silver(cfg.data_dir)
     con = conexion.abrir(cfg.data_dir)
     try:
         primero, ultimo = leer.rango_disponible(con, base)
-        desde, hasta = periodo.parsear_periodo(periodo_texto, primero, ultimo)
-        formatos = tuple(f.strip() for f in formato.split(",") if f.strip())
+        desde, hasta = _periodo(periodo_texto, primero, ultimo)
         rutas = exportar.exportar_cmg(
             con,
             base,
@@ -266,7 +314,7 @@ def bloques(
     con = conexion.abrir(cfg.data_dir)
     try:
         primero, ultimo = leer.rango_disponible(con, base)
-        desde, hasta = periodo.parsear_periodo(periodo_texto, primero, ultimo)
+        desde, hasta = _periodo(periodo_texto, primero, ultimo)
         df = bloques_mes.resumen_mensual(con, base, barra, desde, hasta)
     except ValueError as e:
         typer.echo(f"Error: {e}", err=True)
@@ -292,7 +340,7 @@ def riesgo(
     con = conexion.abrir(cfg.data_dir)
     try:
         primero, ultimo = leer.rango_disponible(con, base)
-        desde, hasta = periodo.parsear_periodo(periodo_texto, primero, ultimo)
+        desde, hasta = _periodo(periodo_texto, primero, ultimo)
         df = riesgo_nodal.resumen_riesgo(con, base, referencia, comparada, desde, hasta)
         ceros, total = riesgo_nodal.intervalos_sin_porcentaje(con, base, referencia, desde, hasta)
     except ValueError as e:
@@ -337,8 +385,8 @@ def descargar_cen(
     d1 = _fecha(desde)
     d2 = _fecha(hasta) if hasta else _hoy() - timedelta(days=1)
     if d1 > d2:
-        typer.echo(f"--desde ({d1}) es posterior a --hasta ({d2}).", err=True)
-        raise typer.Exit(SALIDA_ERROR)
+        _uso(f"--desde ({d1}) es posterior a --hasta ({d2}).")
+    _validar_pausa(pausa)
 
     carpeta = conexion.ruta_bronze_cen(cfg.data_dir)
     typer.echo(f"Descargando {d1} a {d2} en {carpeta}")
@@ -411,13 +459,13 @@ def vigilar_fuente(
 ) -> None:
     """Revisa si el Coordinador cambio algo, sin descargar ZIP.
 
-    Pensado para una tarea programada: exit code 2 si hay algo que revisar.
+    Pensado para una tarea programada: exit code 3 si hay algo que revisar.
     Ademas revisa todo lo descargado: dias sin archivo y preliminares viejos.
     """
     cfg = _settings()
     if dias < 1:
-        typer.echo("--dias debe ser al menos 1.", err=True)
-        raise typer.Exit(SALIDA_ERROR)
+        _uso("--dias debe ser al menos 1.")
+    _validar_pausa(pausa)
     hoy = _hoy()
     try:
         hallazgos = deriva.vigilar_fuente(

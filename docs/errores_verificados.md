@@ -199,6 +199,19 @@ y `PPA_` en `ppa-pipeline`. Si una entrada aplica solo a un proyecto, decirlo ex
 - **Lección:** toda cifra de un informe sale de un script cuyo resultado está a la vista, y si
   esa cifra va a un test, el test la verifica (fue un test el que atrapó el 21).
 
+### A15. Asignar un código de salida sin mirar cuáles usa la librería de debajo
+- **Error:** definí 0 bien / 1 error de uso o del programa / **2 hallazgos**. Pero click (debajo de
+  typer) sale con **2** en todo error de uso que detecta antes de entrar a la función.
+- **Evidencia (2026-10-09, reportado en la revisión de `cli.py` y reproducido):**
+  `cmg descargar-cen` → "Missing option '--desde'" exit=2; `--pausa abc` → exit=2; comando
+  inexistente → exit=2. Una tarea programada mal escrita se leía como "hay hallazgos", sin
+  reporte en `data/alertas/`. Los errores que detectaba el programa (fecha mal escrita) sí daban 1:
+  la misma clase de error salía con dos códigos distintos.
+- **Corrección:** 0 bien · 1 no se pudo cumplir · 2 comando mal escrito (click o el programa,
+  `cli._uso`) · 3 hallazgos. Tests que fijan los cuatro números y los errores de click.
+- **Lección:** un código de salida es un contrato con quien llama, y las librerías ya ocupan
+  algunos. Se prueba **invocando el comando mal escrito**, no solo los caminos de la función.
+
 ---
 
 ## B. Procesamiento de datos (del código que se está portando)

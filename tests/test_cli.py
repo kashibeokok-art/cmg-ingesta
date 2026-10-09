@@ -115,7 +115,7 @@ def test_bloques_barra_inexistente(con_base: Path) -> None:
 
 def test_bloques_periodo_invalido(con_base: Path) -> None:
     r = runner.invoke(cli.app, ["bloques", "BARRA_1", "--periodo", "ayer"])
-    assert r.exit_code == cli.SALIDA_ERROR
+    assert r.exit_code == cli.SALIDA_USO
     assert "no reconocido" in r.stderr
 
 
@@ -136,7 +136,7 @@ def test_descargar_escribe_el_archivo(con_base: Path, entorno: Path) -> None:
 
 def test_descargar_formato_invalido(con_base: Path) -> None:
     r = runner.invoke(cli.app, ["descargar", "BARRA_1", "--formato", "pdf"])
-    assert r.exit_code == cli.SALIDA_ERROR
+    assert r.exit_code == cli.SALIDA_USO
     assert "no soportado" in r.stderr
 
 
@@ -179,7 +179,7 @@ def test_riesgo_sin_interseccion(con_base: Path) -> None:
 
 def test_migrar_origen_inexistente(entorno: Path) -> None:
     r = runner.invoke(cli.app, ["migrar-historico", str(entorno / "no_existe")])
-    assert r.exit_code == cli.SALIDA_ERROR
+    assert r.exit_code == cli.SALIDA_USO
 
 
 def test_migrar_sin_meses_en_el_tramo(entorno: Path) -> None:
@@ -363,14 +363,14 @@ def test_descargar_cen_hasta_por_omision_es_ayer(
 def test_descargar_cen_fecha_invalida(sin_red: Callable[..., Sesion]) -> None:
     sin_red({})
     r = runner.invoke(cli.app, ["descargar-cen", "--desde", "15-01-2026"])
-    assert r.exit_code == cli.SALIDA_ERROR
+    assert r.exit_code == cli.SALIDA_USO
     assert "AAAA-MM-DD" in r.stderr
 
 
 def test_descargar_cen_rango_al_reves(sin_red: Callable[..., Sesion]) -> None:
     sin_red({})
     r = runner.invoke(cli.app, ["descargar-cen", "--desde", "2026-02-01", "--hasta", "2026-01-01"])
-    assert r.exit_code == cli.SALIDA_ERROR
+    assert r.exit_code == cli.SALIDA_USO
     assert "posterior" in r.stderr
 
 
@@ -382,7 +382,7 @@ def test_descargar_cen_pausa_menor_a_un_segundo_se_rechaza(
         cli.app,
         ["descargar-cen", "--desde", "2026-10-01", "--hasta", "2026-10-01", "--pausa", "0.1"],
     )
-    assert r.exit_code == cli.SALIDA_ERROR
+    assert r.exit_code == cli.SALIDA_USO
     assert "pausa" in r.stderr
 
 
@@ -429,7 +429,7 @@ def test_vigilar_fuente_sin_publicaciones_sale_con_codigo_2(
 def test_vigilar_fuente_dias_invalido(sin_red: Callable[..., Sesion]) -> None:
     sin_red({})
     r = runner.invoke(cli.app, ["vigilar-fuente", "--dias", "0"])
-    assert r.exit_code == cli.SALIDA_ERROR
+    assert r.exit_code == cli.SALIDA_USO
 
 
 # ----------------------------------------------------------------- menu
@@ -485,3 +485,34 @@ def test_descargar_cen_con_el_sitio_caido_explica_como_retomar(
     assert "no respondio" in r.stderr
     assert "retomar" in r.stderr
     assert r.exception is None or isinstance(r.exception, SystemExit)
+
+
+# ------------------------------------------------------- codigos de salida
+
+
+def test_los_cuatro_codigos_son_distintos() -> None:
+    """REGRESION A15: los hallazgos salian con 2, el mismo codigo de los errores de click."""
+    codigos = [cli.SALIDA_OK, cli.SALIDA_ERROR, cli.SALIDA_USO, cli.SALIDA_CON_HALLAZGOS]
+    assert codigos == [0, 1, 2, 3]
+
+
+def test_falta_una_opcion_obligatoria_es_error_de_uso(entorno: Path) -> None:
+    """Lo detecta click antes de entrar a la funcion, y sale con 2."""
+    r = runner.invoke(cli.app, ["descargar-cen"])
+    assert r.exit_code == cli.SALIDA_USO
+    assert r.exit_code != cli.SALIDA_CON_HALLAZGOS
+
+
+def test_una_opcion_con_tipo_invalido_es_error_de_uso(entorno: Path) -> None:
+    r = runner.invoke(cli.app, ["descargar-cen", "--desde", "2026-10-01", "--pausa", "abc"])
+    assert r.exit_code == cli.SALIDA_USO
+
+
+def test_un_comando_inexistente_es_error_de_uso(entorno: Path) -> None:
+    assert runner.invoke(cli.app, ["comando-que-no-existe"]).exit_code == cli.SALIDA_USO
+
+
+def test_periodo_bien_escrito_pero_sin_datos_no_es_error_de_uso(con_base: Path) -> None:
+    """'2019' se entiende; lo que pasa es que la base no tiene 2019: eso es 1, no 2."""
+    r = runner.invoke(cli.app, ["bloques", "BARRA_1", "--periodo", "2019"])
+    assert r.exit_code == cli.SALIDA_ERROR

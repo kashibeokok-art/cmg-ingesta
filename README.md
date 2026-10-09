@@ -115,7 +115,7 @@ Y uno que el programa escribe para que lo revises:
 |---|---|
 | `data/bronze/cen_cmg/nombres_no_reconocidos.csv` | Todo enlace a ZIP que no calzó con ninguna forma: día, nombre, URL, etiqueta, texto del bloque, motivo, primera y última vez que se vio. Se abre con Excel. |
 
-Cuando algo requiere revisión manual, el comando sale con código 2 y deja un reporte en
+Cuando algo requiere revisión manual, el comando sale con código 3 y deja un reporte en
 `data/alertas/deriva_*.md` (para leer) y `.json` (para procesar). Un día con hallazgo
 **crítico**, o con un archivo que no se pudo clasificar, no entra a Silver.
 
@@ -129,10 +129,13 @@ Formatos de periodo: `2025` · `2025-03` · `2025-03 a 2025-08` · `ultimos 6` �
 | Código | Significa |
 |---|---|
 | 0 | todo bien |
-| 1 | error de uso o del programa |
-| 2 | terminó, pero las validaciones encontraron problemas |
+| 1 | el pedido estaba bien escrito, pero no se pudo cumplir (sitio caído, base vacía, barra sin datos) |
+| 2 | el comando está mal escrito (falta una opción, una fecha no se entiende...) |
+| 3 | terminó, pero las validaciones encontraron algo que revisar en `data/alertas/` |
 
-El 2 sirve para automatizar: distingue *"cargó pero revisa"* de *"no cargó"*.
+Para una tarea programada: 1 = no se hizo, revisar ya; 2 = la tarea está mal configurada;
+3 = se hizo, pero hay que mirar el reporte. El 2 es el que usa click (la librería de debajo de
+typer) para sus propios errores de uso, por eso los hallazgos usan el 3.
 
 ## Lo que hay que saber de los datos
 

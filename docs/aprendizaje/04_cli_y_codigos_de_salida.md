@@ -54,7 +54,8 @@ Acá la pregunta vive en `cli.py` y la función de negocio nunca pregunta. Resul
 ```python
 SALIDA_OK = 0
 SALIDA_ERROR = 1
-SALIDA_CON_HALLAZGOS = 2
+SALIDA_USO = 2
+SALIDA_CON_HALLAZGOS = 3
 ```
 
 Un programa de línea de comandos se comunica con quien lo invoca de dos formas: lo que imprime
@@ -63,16 +64,35 @@ Un programa de línea de comandos se comunica con quien lo invoca de dos formas:
 | Código | Significa | Qué debería hacer el que lo llama |
 |---|---|---|
 | 0 | todo bien | seguir |
-| 1 | error de uso o del programa | detenerse y avisar |
-| **2** | terminó, pero las validaciones encontraron algo | **cargó, pero hay que revisar** |
+| 1 | el pedido estaba bien escrito, pero no se pudo cumplir | detenerse y avisar |
+| 2 | el comando está mal escrito | corregir la tarea programada |
+| **3** | terminó, pero las validaciones encontraron algo | **cargó, pero hay que revisar** |
 
-El **2 es el interesante**. Si pones `cmg migrar-historico` en el Task Scheduler:
+El **3 es el interesante**. Si pones `cmg migrar-historico` en el Task Scheduler:
 
 - exit 1 → *no cargó nada*, hay que intervenir ya
-- exit 2 → *cargó, pero el dato tiene problemas conocidos*, revisar el reporte
+- exit 2 → *la tarea está mal escrita*: el programa ni siquiera corrió
+- exit 3 → *cargó, pero el dato tiene problemas conocidos*, revisar el reporte
 
-Sin ese tercer código tendrías que elegir entre mentir (devolver 0 con datos defectuosos) o
-alarmar de más (devolver 1 cuando sí cargó).
+Sin ese código propio para los hallazgos tendrías que elegir entre mentir (devolver 0 con datos
+defectuosos) o alarmar de más (devolver 1 cuando sí cargó).
+
+### Por qué los hallazgos son 3 y no 2 (error A15)
+
+La primera versión usaba 2 para los hallazgos. Pero typer se apoya en **click**, y click sale con
+**2** cuando él mismo detecta un error de uso, antes de entrar a tu función:
+
+```
+cmg descargar-cen                          → "Missing option '--desde'"   exit=2
+cmg descargar-cen --desde ... --pausa abc  → "not a valid float"          exit=2
+```
+
+Una tarea programada mal escrita se veía igual que "hay hallazgos", y en `data/alertas/` no
+había ningún reporte, porque el programa nunca corrió. El 2 para "uso incorrecto" es la
+convención de los programas de consola (click, argparse, muchas herramientas de Unix), así que
+se adoptó también para los errores de uso que detecta el propio programa (`_uso`), y los
+hallazgos pasaron al 3. La lección: **antes de asignar un código de salida, mira cuáles ya usan
+las librerías que hay debajo**.
 
 ### Cómo se devuelve en typer
 
@@ -89,8 +109,9 @@ propagar un valor de retorno por toda la cadena de llamadas.
 $env:CMGI_DATA_DIR = "data"
 
 cmg estado                      ; "exit=$LASTEXITCODE"   # 0
-cmg bloques NO_EXISTE           ; "exit=$LASTEXITCODE"   # 1
-cmg bloques BARRA --periodo ayer; "exit=$LASTEXITCODE"   # 1
+cmg bloques NO_EXISTE           ; "exit=$LASTEXITCODE"   # 1: bien escrito, no hay datos
+cmg bloques BARRA --periodo ayer; "exit=$LASTEXITCODE"   # 2: "ayer" no es un periodo
+cmg descargar-cen               ; "exit=$LASTEXITCODE"   # 2: falta --desde (lo detecta click)
 ```
 
 En PowerShell el código del último comando está en `$LASTEXITCODE`. En bash, en `$?`.

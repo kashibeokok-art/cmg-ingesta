@@ -503,7 +503,7 @@ Por eso se mide con datos reales antes de dar algo por terminado.
 ```powershell
 cmg descargar-cen --desde 2025-01-01    # la primera vez; después, desde hace ~20 días
 cmg ingerir-pagina
-cmg vigilar-fuente                      # exit 2 = abrir data/alertas/
+cmg vigilar-fuente                      # exit 3 = abrir data/alertas/
 ```
 
 `--hasta` por omisión es **ayer**: el día de hoy todavía no tiene publicación.
@@ -512,11 +512,11 @@ cmg vigilar-fuente                      # exit 2 = abrir data/alertas/
 después. Si solo miras ayer, nunca recoges el definitivo de la semana pasada. El manifiesto
 evita re-descargar lo que ya está, así que revisar 20 días cuesta 20 páginas, no 20 ZIP.
 
-| Comando | exit 0 | exit 1 | exit 2 |
-|---|---|---|---|
-| `descargar-cen` | todo bien | fecha inválida, pausa < 1 | hay avisos/críticos → reporte |
-| `ingerir-pagina` | todo bien | no hay Bronze | días omitidos o validación falló |
-| `vigilar-fuente` | sin cambios | `--dias` inválido | algo cambió o falta |
+| Comando | exit 0 | exit 1 | exit 2 | exit 3 |
+|---|---|---|---|---|
+| `descargar-cen` | todo bien | el sitio no respondió | fecha inválida, pausa < 1, falta `--desde` | hay avisos/críticos → reporte |
+| `ingerir-pagina` | todo bien | no hay Bronze | opción mal escrita | días omitidos o validación falló |
+| `vigilar-fuente` | sin cambios | el sitio no respondió | `--dias` < 1 | algo cambió o falta |
 
 ---
 
