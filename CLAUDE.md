@@ -777,7 +777,31 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho
 - **ADR-H10 · 2026-10-08 · Tipo y versión: etiqueta + nombre.** Tipo de la etiqueta, versión la
   mayor de las dos, reemisión del nombre. Medido en 1.765 casos reales (A13).
 
+- **ADR-H11 · 2026-10-09 · Formas de nombre en un archivo editable.** `config/nombres_cen.toml`
+  con plantillas legibles (`{tipo}_{fecha}_v{version}`), alias de tipo y validación al cargar
+  (cada `ejemplo` debe calzar con su plantilla). Pedido del usuario: los nombres los escribe a
+  mano el Coordinador y se tienen que poder agregar sin tocar código. Lo no reconocido va a
+  `bronze/cen_cmg/nombres_no_reconocidos.csv` (Excel: `;` y UTF-8 con BOM) con el texto hallado.
+- **ADR-H12 · 2026-10-09 · Chequeo previo contra una línea base.** Antes de descargar se compara
+  el sitio con `config/linea_base_cen.toml` (índice, marcas del HTML, día de referencia
+  2026-01-15 con sus 2 documentos, sitemap): 3 peticiones. Un cambio estructural detiene la
+  descarga sin bajar nada; una revisión nueva en el día de referencia es solo informativa
+  (pedido del usuario: "los documentos pueden tener varias revisiones").
+
 ## 8. Bitácora
+
+### 2026-10-09 — Sesión 7: catálogo editable y línea base
+- Pedido del usuario: un diccionario editable de formas de nombre, un registro de los enlaces
+  que no calcen (con el texto encontrado) y comparar el sitio con los parámetros con que se hizo
+  el programa antes de empezar.
+- `extract/catalogo_nombres.py` + `config/nombres_cen.toml`: 12 plantillas reconocen los 1.765
+  nombres reales (reemplaza `RE_NOMBRE`). `extract/no_reconocidos.py`: registro CSV.
+- `quality/linea_base.py` + `config/linea_base_cen.toml`; `cmg descargar-cen --omitir-chequeo`.
+  En vivo (2026-10-09): **sin diferencias** con la línea base.
+- Detector sobre las 797 páginas del escaneo: 1 enlace raro, `CmgBarrasComparativo_20260508_…zip`,
+  con etiqueta "Preliminar": es el preliminar del 2026-05-08 publicado con otro nombre (ese día
+  tiene definitivo, no se pierde dato).
+- 583 tests.
 
 ### 2026-10-08 — Sesión 6: búsqueda y descarga robustas
 - **Corte de fuentes a 2024-08-01** (decisión del usuario): `INICIO_FUENTE = 2024-08-01`,

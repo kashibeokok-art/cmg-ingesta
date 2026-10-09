@@ -102,7 +102,9 @@ def test_la_descarga_de_ayer_trae_sola_la_revision_de_agosto(tmp_path: Path) -> 
             UP + v2: Respuesta(200, contenido=zip_valido("v2")),
         }
     )
-    nuevos, h = deriva.sincronizar_vigilando(AYER, AYER, tmp_path, sesion, pausa=1.0, hoy=AYER)
+    nuevos, h = deriva.sincronizar_vigilando(
+        AYER, AYER, tmp_path, sesion, pausa=1.0, hoy=AYER, chequear=False
+    )
 
     assert [n["nombre"] for n in nuevos] == [v2]
     assert nuevos[0]["version"] == 2
@@ -115,7 +117,7 @@ def test_la_descarga_de_ayer_trae_sola_la_revision_de_agosto(tmp_path: Path) -> 
 def test_sin_nada_descargado_solo_fija_la_linea_base(tmp_path: Path) -> None:
     """La primera descarga ya trae lo vigente: no hay revisiones que buscar."""
     sesion = Sesion({cen.url_dia(AYER): Respuesta(200, "<html></html>")})
-    deriva.sincronizar_vigilando(AYER, AYER, tmp_path, sesion, pausa=1.0, hoy=AYER)
+    deriva.sincronizar_vigilando(AYER, AYER, tmp_path, sesion, pausa=1.0, hoy=AYER, chequear=False)
     assert sm.SITEMAP not in sesion.pedidos
     assert sm.leer_estado(tmp_path) is not None
 
@@ -123,7 +125,9 @@ def test_sin_nada_descargado_solo_fija_la_linea_base(tmp_path: Path) -> None:
 def test_sitemap_caido_avisa_y_no_avanza_el_punto(tmp_path: Path) -> None:
     bronze_con_v1(tmp_path)
     sesion = Sesion({cen.url_dia(AYER): Respuesta(200, "<html></html>")})
-    _, h = deriva.sincronizar_vigilando(AYER, AYER, tmp_path, sesion, pausa=1.0, hoy=AYER)
+    _, h = deriva.sincronizar_vigilando(
+        AYER, AYER, tmp_path, sesion, pausa=1.0, hoy=AYER, chequear=False
+    )
     assert "sitemap_no_disponible" in {x["tipo"] for x in h}
     assert sm.leer_estado(tmp_path) is None  # se reintenta la proxima vez
 

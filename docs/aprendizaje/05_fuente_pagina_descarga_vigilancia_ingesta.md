@@ -349,6 +349,33 @@ Falla `test_un_corte_a_mitad_no_obliga_a_bajar_de_nuevo`: con un 503 en el terce
 primeros quedan en disco pero **sin registrar**, y la segunda corrida los vuelve a pedir. Correr
 el proceso dos veces completo nunca habría mostrado esto; hay que **cortarlo a la mitad**.
 
+### 5d. Configuración en archivos, no en código (2026-10-09)
+
+Dos cosas que antes estaban escritas en Python ahora viven en archivos de texto que se editan a
+mano, en `config/`:
+
+- **`nombres_cen.toml`**: las formas de nombre como plantillas. `{tipo}-v{version}_{fecha}` se
+  convierte sola en la expresión regular que antes había que escribir a mano. El programa
+  **valida el archivo al cargarlo**: cada forma trae un `ejemplo` real, y si no calza con su propia
+  plantilla, se detiene y dice cuál. Así, un error de tipeo no deja de reconocer nombres en
+  silencio.
+- **`linea_base_cen.toml`**: cómo era el sitio cuando se hizo el programa. Antes de descargar se
+  compara (`quality/linea_base.py`), y si cambió algo **estructural** no se baja nada.
+
+La idea se llama **separar datos de lógica**: lo que cambia seguido y lo decide una persona
+(qué nombres existen, cómo es el sitio) no debería exigir un programador. Lo que es regla del
+programa (cómo se elige la versión, cómo se verifica un ZIP) sigue en el código, con tests.
+
+### 🔬 Caso práctico 4d: agrega una forma de nombre
+
+1. Abre `config/nombres_cen.toml` y copia la última `[[formas]]` al final.
+2. Cambia la plantilla a `"{tipo}_{fecha}_final"` y el ejemplo a
+   `"Antecedentes_CMG_Real_def_260115_final.zip"`.
+3. `uv run python -c "from cmg_ingesta.extract import catalogo_nombres as c; print(c.leer_nombre('Antecedentes_CMG_Real_def_260115_final.zip'))"`
+   ahora devuelve `{'tipo': 'def', ...}`; antes devolvía `None`.
+4. **Rómpelo:** cambia el ejemplo a `..._260115_fin.zip`. El mismo comando ahora se detiene con
+   `ErrorCatalogo: el ejemplo ... no calza con su plantilla`. Deja el archivo como estaba.
+
 ---
 
 ## 6. M5: la trampa de los ceros

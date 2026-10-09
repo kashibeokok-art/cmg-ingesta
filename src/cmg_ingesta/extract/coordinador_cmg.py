@@ -40,6 +40,8 @@ from typing import Protocol, TypedDict
 
 from bs4 import BeautifulSoup
 
+from cmg_ingesta.extract import catalogo_nombres
+
 BASE = "https://www.coordinador.cl"
 RAIZ = f"{BASE}/mercados/documentos/costo-marginal-real"
 
@@ -73,35 +75,9 @@ MESES: dict[int, str] = {
 #: `span.documentos-Publicar-Fecha` del bloque viene VACIO.
 RE_PUB = re.compile(r"Fecha de publicaci[óo]n:\s*(\d{2})/(\d{2})/(\d{4})")
 
-#: El nombre del archivo. Los nombres se escriben A MANO en el Coordinador: el
-#: escaneo del 2026-10-08 encontro 26 formas en 1.765 ZIP (2024-08 a 2026-10). El
-#: catalogo completo esta en tests/fixtures/nombres_reales.tsv y un test exige que
-#: ninguno quede sin reconocer. Las formas, de la mas comun a la mas rara:
-#:
-#:     def_260115.zip  pre_260115.zip         base (1.530 de 1.765)
-#:     def_260801_v2.zip  def_v2_250201.zip   version despues o antes de la fecha
-#:     def-v2_250203.zip  def-V2_240816.zip   version con guion, mayuscula
-#:     pre_260401-1.zip  pre_260811_v2-1.zip  re-subida (-N de WordPress)
-#:     pr_240907.zip  prel_v2_250612.zip      tipo abreviado o alargado
-#:     pre_20250717.zip  def_25406.zip        fecha de 8 digitos, o mal escrita
-#:     pre251116.zip  pre-v2_250220_.zip      sin _ antes de la fecha, _ sobrante
-#:     pre.zip  def-v3_v2.zip                 sin fecha
-#:
-#: Por eso el nombre no se usa solo: se combina con la etiqueta de la pagina (ver
-#: RE_ETIQUETA y `clasificar_documento`).
-RE_NOMBRE = re.compile(
-    r"CMG_Real_(?P<tipo>prel|pre|pr|def)"  # el mas largo primero: "prel" antes que "pre"
-    r"(?:[_-]v(?P<v_antes>\d+))?"  # _v2 o -v2 o -V2 antes de la fecha
-    r"(?:_?(?P<fecha>\d{5,8}))?"  # fecha opcional; 6 = AAMMDD, 8 = AAAAMMDD, otra = mal escrita
-    r"(?:_v(?P<v_despues>\d+))?"  # _v2 despues de la fecha
-    r"_?"  # guion bajo sobrante antes del final
-    r"(?:-(?P<reemision>\d+))?"  # -1, -2: WordPress renombro al re-subir
-    r"\.zip$",
-    re.I,
-)
-
-#: Tipos tal como aparecen en el nombre -> tipo canonico.
-TIPO_DEL_NOMBRE = {"def": "def", "pre": "pre", "prel": "pre", "pr": "pre"}
+#: Las formas de nombre de los ZIP NO estan en el codigo: viven en el archivo
+#: editable config/nombres_cen.toml (ver extract/catalogo_nombres.py). El nombre
+#: lo escribe a mano el Coordinador: 26 formas en 1.765 casos (escaneo 2026-10-08).
 
 #: La etiqueta del documento en la pagina. Mucho mas regular que el nombre: el
 #: escaneo encontro solo 7 formas, todas de esta familia:
@@ -407,30 +383,24 @@ def dias_entre(desde: date, hasta: date) -> Iterator[date]:
 
 
 def _info_nombre(nombre: str) -> tuple[str, int, int]:
-    """(tipo, version, reemision) a partir del nombre del archivo.
+    """(tipo, version, reemision) a partir del nombre, segun config/nombres_cen.toml.
 
     def_260115.zip         -> ("def", 1, 0)
     def-V2_240816.zip      -> ("def", 2, 0)
     pre_260811_v2-1.zip    -> ("pre", 2, 1)
-    pr_240907.zip          -> ("pre", 1, 0)      alias
+    pr_240907.zip          -> ("pre", 1, 0)      alias en [tipos]
     otra cosa              -> ("desconocido", 1, 0)
-
-    Si la version aparece dos veces (`def-v3_v2.zip`, real), gana la mayor.
     """
-    m = RE_NOMBRE.search(nombre)
-    if not m:
+    lectura = catalogo_nombres.leer_nombre(nombre)
+    if lectura is None:
         return ("desconocido", 1, 0)
-    tipo = TIPO_DEL_NOMBRE[m.group("tipo").lower()]
-    versiones = [int(v) for v in (m.group("v_antes"), m.group("v_despues")) if v]
-    version = max(versiones, default=1)
-    reemision = int(m.group("reemision") or 0)
-    return (tipo, version, reemision)
+    return (lectura["tipo"], lectura["version"], lectura["reemision"])
 
 
 def digitos_fecha_nombre(nombre: str) -> str:
-    """Los digitos de fecha que trae el nombre, tal cual. "" si no trae ninguno."""
-    m = RE_NOMBRE.search(nombre)
-    return (m.group("fecha") or "") if m else ""
+    """Los digitos de fecha que trae el nombre, tal cual. "" si no trae o no calza."""
+    lectura = catalogo_nombres.leer_nombre(nombre)
+    return lectura["fecha"] if lectura else ""
 
 
 def fecha_del_nombre(nombre: str) -> date | None:
@@ -514,10 +484,10 @@ def parsear_documentos(html: str, dia: date) -> list[Documento]:
 
     for a in soup.find_all("a", href=True):
         href = str(a["href"])
-        if "/wp-content/uploads/" not in href or not href.lower().endswith(".zip"):
+        if "/wp-content/uploads/" not in href:
             continue
-        # sin distinguir mayusculas: "CMG_Real", "CMg_Real" o "cmg_real" son lo mismo
-        if "cmg_real" not in href.lower() or href in vistos:
+        # sin distinguir mayusculas: lo define `debe_contener` en config/nombres_cen.toml
+        if not catalogo_nombres.es_candidato(href) or href in vistos:
             continue
         vistos.add(href)
 

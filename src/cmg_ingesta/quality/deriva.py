@@ -43,7 +43,7 @@ from bs4 import BeautifulSoup
 
 from cmg_ingesta.domain import calendario
 from cmg_ingesta.extract import coordinador_cmg as cen
-from cmg_ingesta.extract import sitemap_cen
+from cmg_ingesta.extract import no_reconocidos, sitemap_cen
 
 Severidad = Literal["info", "aviso", "critico"]
 
@@ -281,8 +281,8 @@ def _revisar_nombre_y_etiqueta(dia: date, d: cen.Documento) -> list[Hallazgo]:
                     else "La etiqueta tampoco se pudo leer: el dia no se ingiere."
                 ),
                 d["nombre"],
-                "Agregar la forma a RE_NOMBRE en extract/coordinador_cmg.py y el nombre "
-                "a tests/fixtures/nombres_reales.tsv.",
+                "Agregar la forma a config/nombres_cen.toml (instrucciones en el archivo). "
+                "Queda anotado en nombres_no_reconocidos.csv con el texto de la pagina.",
             )
         )
     if de_etiqueta is None:
@@ -777,6 +777,7 @@ def sincronizar_vigilando(
     hoy: date | None = None,
     avisar: Callable[[str], None] | None = None,
     revisar_sitemap: bool = True,
+    chequear: bool = True,
 ) -> tuple[list[cen.EntradaManifiesto], list[Hallazgo]]:
     """`sincronizar` + deteccion de cambios en cada pagina y cada ZIP.
 
@@ -792,14 +793,31 @@ def sincronizar_vigilando(
     Con `revisar_sitemap` (por defecto) busca ademas REVISIONES publicadas desde
     la ultima vez (`extract/sitemap_cen.py`) y baja los dias afectados aunque
     esten fuera del rango pedido: un v2 de hace dos meses entra solo.
+
+    Con `chequear` (por defecto) compara primero el sitio con la linea base
+    (`quality/linea_base.py`): si algo estructural cambio, NO descarga nada.
+
+    Todo ZIP de una pagina que no calce con config/nombres_cen.toml queda en
+    `nombres_no_reconocidos.csv` (`extract/no_reconocidos.py`).
     """
+    if pausa < cen.PAUSA_MINIMA:  # antes de cualquier peticion, tambien la del chequeo
+        raise ValueError(f"pausa={pausa} es menor que el minimo {cen.PAUSA_MINIMA}s.")
+    hallazgos: list[Hallazgo] = []
+    if chequear:
+        hallazgos += _chequeo_previo(sesion, timeout, avisar)
+        if descarga_detenida(hallazgos):
+            return [], hallazgos
+
     anios = range(desde.year, hasta.year + 1)
-    slugs, hallazgos = actualizar_slugs(sesion, carpeta, anios, timeout=timeout)
+    slugs, h_slugs = actualizar_slugs(sesion, carpeta, anios, timeout=timeout)
+    hallazgos += h_slugs
     punto = sitemap_cen.punto_de_partida(carpeta, cen.leer_manifiesto(carpeta))
     ahora = datetime.now(UTC)
+    raros: list[no_reconocidos.Enlace] = []
 
     def al_leer_pagina(dia: date, html: str, docs: list[cen.Documento]) -> None:
         hallazgos.extend(revisar_pagina_dia(dia, html, docs))
+        raros.extend(no_reconocidos.detectar(html, dia))
         if avisar:
             avisar(f"  {dia}  {len(docs)} archivo(s) publicado(s)")
 
@@ -836,28 +854,83 @@ def sincronizar_vigilando(
             al_fallar=al_fallar,
         )
 
-    nuevos = bajar(desde, hasta)
-
-    if revisar_sitemap:
-        nuevos += _bajar_revisiones(
-            punto,
-            ahora,
-            desde,
-            hasta,
-            carpeta,
-            sesion,
-            pausa,
-            timeout,
-            slugs,
-            bajar,
-            hallazgos,
-            avisar,
-        )
+    try:
+        nuevos = bajar(desde, hasta)
+        if revisar_sitemap:
+            nuevos += _bajar_revisiones(
+                punto,
+                ahora,
+                desde,
+                hasta,
+                carpeta,
+                sesion,
+                pausa,
+                timeout,
+                slugs,
+                bajar,
+                hallazgos,
+                avisar,
+            )
+    finally:
+        # aunque la descarga se corte, los enlaces raros ya vistos quedan anotados
+        hallazgos += _registrar_no_reconocidos(carpeta, raros)
 
     hallazgos += revisar_completitud(
         cen.leer_manifiesto(carpeta), desde, hasta, hoy or date.today()
     )
     return nuevos, hallazgos
+
+
+def _chequeo_previo(
+    sesion: cen.Sesion, timeout: float, avisar: Callable[[str], None] | None
+) -> list[Hallazgo]:
+    """Compara el sitio con config/linea_base_cen.toml (ver quality/linea_base.py).
+
+    Se importa aqui adentro porque `linea_base` usa los tipos de ESTE modulo: un
+    import arriba de todo seria circular.
+    """
+    from cmg_ingesta.quality import linea_base
+
+    if avisar:
+        avisar("  chequeo previo: comparando el sitio con la linea base...")
+    hallazgos = linea_base.chequeo_previo(sesion, timeout=timeout)
+    if linea_base.detiene(hallazgos):
+        hallazgos.append(
+            _h(
+                "critico",
+                "descarga_detenida",
+                "El sitio cambio respecto de la linea base: no se descargo nada para no "
+                "registrar datos con un lector que podria estar desactualizado.",
+                ", ".join(h["tipo"] for h in hallazgos if h["severidad"] == "critico"),
+                linea_base.ACCION_CRITICA,
+            )
+        )
+    return hallazgos
+
+
+def descarga_detenida(hallazgos: list[Hallazgo]) -> bool:
+    """True si el chequeo previo detuvo la descarga (no se bajo nada)."""
+    return any(h["tipo"] == "descarga_detenida" for h in hallazgos)
+
+
+def _registrar_no_reconocidos(
+    carpeta: Path, enlaces: list[no_reconocidos.Enlace]
+) -> list[Hallazgo]:
+    """Anota los enlaces raros en el CSV y avisa si aparecio alguno NUEVO."""
+    nuevos = no_reconocidos.registrar(carpeta, enlaces, time.strftime("%Y-%m-%dT%H:%M:%S"))
+    if not nuevos:
+        return []
+    return [
+        _h(
+            "aviso",
+            "nombres_no_reconocidos_nuevos",
+            f"{nuevos} enlace(s) a ZIP que no calzan con ninguna forma conocida. Quedaron "
+            "anotados con el texto encontrado en la pagina.",
+            str(carpeta / no_reconocidos.ARCHIVO),
+            "Abrir el CSV en Excel. Si es CMg Real con un nombre nuevo, agregar la forma a "
+            "config/nombres_cen.toml (las instrucciones estan en el mismo archivo).",
+        )
+    ]
 
 
 def _dias_revisados(revisiones: list[sitemap_cen.Revision], hasta: date) -> list[date]:
@@ -964,8 +1037,11 @@ def vigilar_fuente(
     pausa: float = cen.PAUSA_MINIMA,
     timeout: float = 30.0,
     hoy: date | None = None,
+    chequear: bool = True,
 ) -> list[Hallazgo]:
     """Chequeo liviano para correr periodicamente. **No descarga ZIP.**
+
+    0. (`chequear`) Compara el sitio con la linea base; aqui solo REPORTA.
 
     1. Consulta el indice siempre (slugs nuevos o cambiados).
     2. Revisa las paginas de los ultimos `dias` dias.
@@ -980,11 +1056,14 @@ def vigilar_fuente(
     if pausa < cen.PAUSA_MINIMA:
         raise ValueError(f"pausa={pausa} es menor que el minimo {cen.PAUSA_MINIMA}s.")
     desde = hasta - timedelta(days=dias - 1)
-    slugs, hallazgos = actualizar_slugs(
+    hallazgos: list[Hallazgo] = _chequeo_previo(sesion, timeout, None) if chequear else []
+    slugs, h_slugs = actualizar_slugs(
         sesion, carpeta, range(desde.year, hasta.year + 1), forzar=True, timeout=timeout
     )
+    hallazgos += h_slugs
 
     con_documentos = 0
+    raros: list[no_reconocidos.Enlace] = []
     for dia in cen.dias_entre(desde, hasta):
         time.sleep(pausa)
         html = cen.obtener_pagina_dia(dia, sesion, timeout, slugs)
@@ -993,6 +1072,8 @@ def vigilar_fuente(
         docs = cen.parsear_documentos(html, dia)
         con_documentos += bool(docs)
         hallazgos += revisar_pagina_dia(dia, html, docs)
+        raros += no_reconocidos.detectar(html, dia)
+    hallazgos += _registrar_no_reconocidos(carpeta, raros)
 
     if con_documentos == 0:
         hallazgos.append(

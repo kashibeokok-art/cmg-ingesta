@@ -652,7 +652,7 @@ def test_sincronizar_vigilando_detecta_y_descarga_igual(tmp_path: Path) -> None:
         paginas={cen.url_dia(dia): _pagina_con(url_zip)},
         zips={url_zip: zip_valido()},
     )
-    nuevos, h = deriva.sincronizar_vigilando(dia, dia, tmp_path, sesion, pausa=1.0)
+    nuevos, h = deriva.sincronizar_vigilando(dia, dia, tmp_path, sesion, pausa=1.0, chequear=False)
 
     assert [n["nombre"] for n in nuevos] == ["Antecedentes_CMG_Real_def_260115_final.zip"]
     assert nuevos[0]["tipo"] == "def"
@@ -681,7 +681,7 @@ def test_un_zip_que_sigue_llegando_mal_no_se_registra(
         paginas={cen.url_dia(dia): pagina},
         zips={malo: b"PK\x03\x04no-es-un-zip-de-verdad", bueno: zip_valido()},
     )
-    nuevos, h = deriva.sincronizar_vigilando(dia, dia, tmp_path, sesion, pausa=1.0)
+    nuevos, h = deriva.sincronizar_vigilando(dia, dia, tmp_path, sesion, pausa=1.0, chequear=False)
 
     assert [n["nombre"] for n in nuevos] == ["Antecedentes_CMG_Real_pre_260115.zip"]
     assert "Antecedentes_CMG_Real_def_260115.zip" not in cen.leer_manifiesto(tmp_path)
@@ -741,7 +741,9 @@ def test_sincronizar_vigilando_avisa_un_dia_que_el_cen_no_publico(tmp_path: Path
     """La pagina existe pero no tiene documentos: queda para revision manual."""
     dia = date(2026, 1, 15)
     sesion = SesionFalsa({cen.url_dia(dia): "<html><body>sin documentos</body></html>"})
-    nuevos, h = deriva.sincronizar_vigilando(dia, dia, tmp_path, sesion, pausa=1.0, hoy=HOY)
+    nuevos, h = deriva.sincronizar_vigilando(
+        dia, dia, tmp_path, sesion, pausa=1.0, hoy=HOY, chequear=False
+    )
     assert nuevos == []
     assert "dia_sin_registro" in tipos(h)
 
@@ -755,7 +757,9 @@ def test_sincronizar_vigilando_informa_el_avance(tmp_path: Path) -> None:
         zips={url_zip: zip_valido()},
     )
     lineas: list[str] = []
-    deriva.sincronizar_vigilando(dia, dia, tmp_path, sesion, pausa=1.0, avisar=lineas.append)
+    deriva.sincronizar_vigilando(
+        dia, dia, tmp_path, sesion, pausa=1.0, avisar=lineas.append, chequear=False
+    )
 
     assert any("2026-01-15" in linea and "1 archivo" in linea for linea in lineas)
     assert any("+ Antecedentes_CMG_Real_def_260115.zip" in linea for linea in lineas)

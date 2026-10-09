@@ -1,0 +1,111 @@
+# =============================================================================
+#  Formas de nombre de los ZIP de Costo Marginal Real que el programa reconoce
+# =============================================================================
+#
+# Este archivo se puede editar a mano (Bloc de notas sirve). El programa lo lee
+# cada vez que corre: no hay que tocar codigo.
+#
+# Cuando el Coordinador publica un nombre nuevo, aparece en
+#     data/bronze/cen_cmg/nombres_no_reconocidos.csv
+# (se abre con Excel). Para que el programa lo reconozca:
+#
+#   1. Copia una de las [[formas]] de abajo al final del archivo.
+#   2. Cambia la plantilla para que calce con el nombre nuevo.
+#   3. Pon el nombre real en "ejemplo".
+#   4. Corre:  uv run pytest tests/extract/test_catalogo_nombres.py -q
+#
+# Al cargar, el programa comprueba que cada "ejemplo" calce con SU plantilla. Si
+# no calza, se detiene y dice cual: asi un error de tipeo aqui no pasa inadvertido.
+#
+# Marcadores que se pueden usar en una plantilla:
+#   {tipo}       una de las claves de [tipos] (def, pre, pr, prel...)
+#   {fecha}      de 5 a 8 digitos. 6 = AAMMDD, 8 = AAAAMMDD; otra cantidad se
+#                acepta, pero la fecha se toma de la pagina (siempre se hace)
+#   {version}    numero de version (v2 -> 2). La "v" se escribe en la plantilla
+#   {version2}   un segundo numero de version, si el nombre trae dos (gana el mayor)
+#   {reemision}  el -1, -2 que agrega WordPress al volver a subir un archivo
+# Todo lo demas es texto literal. Mayusculas y minusculas dan lo mismo.
+#
+# Origen: escaneo del sitio del 2026-10-08, 1.765 ZIP (2024-08 a 2026-10). El
+# catalogo completo de nombres reales esta en tests/fixtures/nombres_reales.tsv.
+
+# Todo nombre empieza y termina asi (se agregan solos a cada plantilla).
+prefijo = "Antecedentes_CMG_Real_"
+extension = ".zip"
+
+# Un enlace solo se considera ZIP de CMg Real si contiene este texto (sin
+# distinguir mayusculas). Los demas ZIP de la pagina se registran como
+# "otro_producto" en nombres_no_reconocidos.csv, pero no se descargan.
+debe_contener = "cmg_real"
+
+# Como aparece el tipo en el nombre -> tipo que usa el programa.
+#   def = definitivo, pre = preliminar
+[tipos]
+def = "def"
+pre = "pre"
+pr = "pre"      # 2024-09-07: pr_240907.zip
+prel = "pre"    # 2025-06-12 y 2025-06-17: prel_v2_250612.zip
+
+# -----------------------------------------------------------------------------
+# Las formas. El orden no importa.
+# -----------------------------------------------------------------------------
+
+[[formas]]
+plantilla = "{tipo}_{fecha}"
+ejemplo = "Antecedentes_CMG_Real_def_260115.zip"
+nota = "la base: 1.530 casos. Tambien pre_20250717 (8 digitos) y def_25406 (5)"
+
+[[formas]]
+plantilla = "{tipo}_{fecha}-{reemision}"
+ejemplo = "Antecedentes_CMG_Real_pre_260401-1.zip"
+nota = "re-subida de WordPress: 36 casos"
+
+[[formas]]
+plantilla = "{tipo}_{fecha}_v{version}"
+ejemplo = "Antecedentes_CMG_Real_def_260801_v2.zip"
+nota = "version despues de la fecha: 86 casos (incluye _V2 en mayuscula)"
+
+[[formas]]
+plantilla = "{tipo}_{fecha}_v{version}-{reemision}"
+ejemplo = "Antecedentes_CMG_Real_pre_260811_v2-1.zip"
+nota = "version y re-subida: 9 casos (agosto 2026)"
+
+[[formas]]
+plantilla = "{tipo}_v{version}_{fecha}"
+ejemplo = "Antecedentes_CMG_Real_def_v2_250201.zip"
+nota = "version antes de la fecha: 38 casos (incluye prel_v2_250612)"
+
+[[formas]]
+plantilla = "{tipo}_v{version}_{fecha}-{reemision}"
+ejemplo = "Antecedentes_CMG_Real_def_v2_260610-1.zip"
+nota = "2 casos (2026-06-10)"
+
+[[formas]]
+plantilla = "{tipo}-v{version}_{fecha}"
+ejemplo = "Antecedentes_CMG_Real_def-v2_250203.zip"
+nota = "version con guion: 54 casos (incluye def-V2_240816 y def-v3_250225)"
+
+[[formas]]
+plantilla = "{tipo}-v{version}_{fecha}_"
+ejemplo = "Antecedentes_CMG_Real_pre-v2_250220_.zip"
+nota = "guion bajo sobrante: 1 caso (2025-02-20)"
+
+[[formas]]
+plantilla = "{tipo}_{fecha}_v{version}_"
+ejemplo = "Antecedentes_CMG_Real_pre_251230_v2_.zip"
+nota = "guion bajo sobrante: 1 caso (2025-12-30)"
+
+[[formas]]
+plantilla = "{tipo}{fecha}"
+ejemplo = "Antecedentes_CMG_Real_pre251116.zip"
+nota = "sin guion bajo antes de la fecha: 1 caso (2025-11-16)"
+
+[[formas]]
+plantilla = "{tipo}"
+ejemplo = "Antecedentes_CMG_Real_pre.zip"
+nota = "sin fecha: 1 caso (2025-02-11). La fecha sale de la pagina"
+
+[[formas]]
+plantilla = "{tipo}-v{version}_v{version2}"
+ejemplo = "Antecedentes_CMG_Real_def-v3_v2.zip"
+nota = "dos versiones y sin fecha: 1 caso (2025-02-25). Gana la mayor (3)"

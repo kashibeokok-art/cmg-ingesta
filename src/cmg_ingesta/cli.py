@@ -321,12 +321,17 @@ def descargar_cen(
     desde: Annotated[str, typer.Option(help="Primer dia, AAAA-MM-DD.")],
     hasta: Annotated[str, typer.Option(help="Ultimo dia, AAAA-MM-DD. Vacio = ayer.")] = "",
     pausa: Annotated[float, typer.Option(help="Segundos entre peticiones (minimo 1).")] = 1.0,
+    omitir_chequeo: Annotated[
+        bool,
+        typer.Option(help="Descargar aunque el sitio no calce con config/linea_base_cen.toml."),
+    ] = False,
 ) -> None:
     """Descarga los ZIP del CMg real desde la pagina del Coordinador (Bronze).
 
-    Es idempotente: lo ya descargado no se vuelve a bajar. Mientras descarga
-    revisa si el Coordinador cambio nombres, columnas o la forma del dia, y al
-    final avisa de dias sin archivo o que siguen solo con preliminar.
+    Primero compara el sitio con la linea base (config/linea_base_cen.toml): si
+    algo estructural cambio, se detiene sin bajar nada. Es idempotente y
+    reanudable. Mientras descarga revisa nombres, columnas y la forma del dia, y
+    anota los enlaces que no reconoce en nombres_no_reconocidos.csv.
     """
     cfg = _settings()
     d1 = _fecha(desde)
@@ -339,7 +344,7 @@ def descargar_cen(
     typer.echo(f"Descargando {d1} a {d2} en {carpeta}")
     try:
         nuevos, hallazgos = deriva.sincronizar_vigilando(
-            d1, d2, carpeta, _sesion(), pausa=pausa, hoy=_hoy()
+            d1, d2, carpeta, _sesion(), pausa=pausa, hoy=_hoy(), chequear=not omitir_chequeo
         )
     except ValueError as e:
         typer.echo(f"Error: {e}", err=True)

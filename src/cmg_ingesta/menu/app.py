@@ -402,6 +402,10 @@ def actualizar(ctx: Contexto) -> None:
         c.decir(f"\n  El sitio no respondio: {e}")
         c.decir("  Lo ya descargado quedo registrado. Vuelve a elegir esta opcion para retomar.")
         return
+    if deriva.descarga_detenida(hallazgos):
+        c.decir("\n  El sitio cambio respecto de la linea base: no se descargo nada.")
+        _mostrar_hallazgos(ctx, hallazgos, "Chequeo previo desde el menu")
+        return
     c.decir(f"\n  {len(nuevos)} archivo(s) nuevo(s). Pasando a la base...")
 
     con = ctx.abrir()

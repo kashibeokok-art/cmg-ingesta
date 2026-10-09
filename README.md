@@ -96,6 +96,25 @@ La descarga es **reanudable**: si se corta (red, Ctrl+C), lo ya bajado queda reg
 basta volver a correr el mismo comando. Las fallas pasajeras del sitio (429, 5xx) se
 reintentan solas; cada ZIP se verifica antes de registrarse.
 
+**Antes de descargar**, el programa compara el sitio con su línea base
+(`config/linea_base_cen.toml`): las marcas del HTML de las que depende, un día de referencia
+con sus documentos conocidos, el índice de años y el sitemap. Si algo estructural cambió, se
+detiene **sin bajar nada** y deja el detalle en `data/alertas/`. Para descargar igual:
+`cmg descargar-cen ... --omitir-chequeo`.
+
+### Archivos que se editan a mano
+
+| Archivo | Para qué |
+|---|---|
+| `config/nombres_cen.toml` | Las formas de nombre de los ZIP que el programa reconoce, como plantillas (`{tipo}-v{version}_{fecha}`). Las instrucciones están en el mismo archivo. Después de editarlo: `uv run pytest tests/extract/test_catalogo_nombres.py -q` |
+| `config/linea_base_cen.toml` | Cómo era el sitio cuando se construyó el programa. Se actualiza solo si el sitio cambia y el programa ya se adaptó. |
+
+Y uno que el programa escribe para que lo revises:
+
+| Archivo | Qué trae |
+|---|---|
+| `data/bronze/cen_cmg/nombres_no_reconocidos.csv` | Todo enlace a ZIP que no calzó con ninguna forma: día, nombre, URL, etiqueta, texto del bloque, motivo, primera y última vez que se vio. Se abre con Excel. |
+
 Cuando algo requiere revisión manual, el comando sale con código 2 y deja un reporte en
 `data/alertas/deriva_*.md` (para leer) y `.json` (para procesar). Un día con hallazgo
 **crítico**, o con un archivo que no se pudo clasificar, no entra a Silver.

@@ -276,6 +276,21 @@ def pagina(*hrefs: str) -> str:
     return f"<html><body>{bloques_html}</body></html>"
 
 
+def sitio_de_referencia() -> dict[str, str | bytes]:
+    """Lo que pide el chequeo previo: el sitio REAL capturado (fixtures), sin cambios."""
+    from cmg_ingesta.extract import sitemap_cen
+
+    return {
+        cen.INDICE: (FIXTURES / "indice_anios.html").read_text(encoding="utf-8"),
+        cen.url_dia(date(2026, 1, 15)): (FIXTURES / "dia_2026-01-15.html").read_text(
+            encoding="utf-8"
+        ),
+        sitemap_cen.SITEMAP: (FIXTURES / "sitemap_indice_2026-10-08.xml").read_text(
+            encoding="utf-8"
+        ),
+    }
+
+
 @pytest.fixture
 def sin_red(monkeypatch: pytest.MonkeyPatch) -> Callable[[dict[str, str | bytes]], Sesion]:
     """Devuelve una funcion que instala la sesion falsa en el CLI."""
@@ -283,7 +298,7 @@ def sin_red(monkeypatch: pytest.MonkeyPatch) -> Callable[[dict[str, str | bytes]
     monkeypatch.setattr(cli, "_hoy", lambda: HOY)
 
     def _instalar(respuestas: dict[str, str | bytes]) -> Sesion:
-        sesion = Sesion(respuestas)
+        sesion = Sesion({**sitio_de_referencia(), **respuestas})
         monkeypatch.setattr(cli, "_sesion", lambda: sesion)
         return sesion
 
@@ -293,12 +308,12 @@ def sin_red(monkeypatch: pytest.MonkeyPatch) -> Callable[[dict[str, str | bytes]
 def test_descargar_cen_baja_al_bronze_y_sale_ok(
     entorno: Path, sin_red: Callable[..., Sesion], zip_cen: ArmarZipCen
 ) -> None:
-    dia = date(2026, 1, 15)
-    nombre = "CMG_Real_def_260115.zip"
+    dia = date(2026, 1, 14)
+    nombre = "Antecedentes_CMG_Real_def_260114.zip"
     contenido = zip_cen(entorno / "tmp.zip", dia).read_bytes()
     sin_red({cen.url_dia(dia): pagina(UP + nombre), UP + nombre: contenido})
 
-    r = runner.invoke(cli.app, ["descargar-cen", "--desde", "2026-01-15", "--hasta", "2026-01-15"])
+    r = runner.invoke(cli.app, ["descargar-cen", "--desde", "2026-01-14", "--hasta", "2026-01-14"])
 
     assert r.exit_code == cli.SALIDA_OK, r.output
     assert (entorno / "data" / "bronze" / "cen_cmg" / nombre).exists()
@@ -309,11 +324,11 @@ def test_descargar_cen_baja_al_bronze_y_sale_ok(
 def test_descargar_cen_dos_veces_no_vuelve_a_bajar(
     entorno: Path, sin_red: Callable[..., Sesion], zip_cen: ArmarZipCen
 ) -> None:
-    dia = date(2026, 1, 15)
-    nombre = "CMG_Real_def_260115.zip"
+    dia = date(2026, 1, 14)
+    nombre = "Antecedentes_CMG_Real_def_260114.zip"
     contenido = zip_cen(entorno / "tmp.zip", dia).read_bytes()
     sesion = sin_red({cen.url_dia(dia): pagina(UP + nombre), UP + nombre: contenido})
-    args = ["descargar-cen", "--desde", "2026-01-15", "--hasta", "2026-01-15"]
+    args = ["descargar-cen", "--desde", "2026-01-14", "--hasta", "2026-01-14"]
 
     runner.invoke(cli.app, args)
     r = runner.invoke(cli.app, args)
@@ -326,10 +341,10 @@ def test_descargar_cen_un_dia_sin_publicar_sale_con_codigo_2(
     entorno: Path, sin_red: Callable[..., Sesion]
 ) -> None:
     """La revision manual se pide con exit 2 y un reporte en data/alertas."""
-    dia = date(2026, 1, 15)
+    dia = date(2026, 1, 14)
     sin_red({cen.url_dia(dia): pagina()})
 
-    r = runner.invoke(cli.app, ["descargar-cen", "--desde", "2026-01-15", "--hasta", "2026-01-15"])
+    r = runner.invoke(cli.app, ["descargar-cen", "--desde", "2026-01-14", "--hasta", "2026-01-14"])
 
     assert r.exit_code == cli.SALIDA_CON_HALLAZGOS
     assert "dia_sin_registro" in r.stdout
@@ -375,11 +390,11 @@ def test_descargar_e_ingerir_deja_el_mes_consultable(
     entorno: Path, sin_red: Callable[..., Sesion], zip_cen: ArmarZipCen
 ) -> None:
     """El flujo completo: pagina -> Bronze -> Silver -> `cmg estado`."""
-    dia = date(2026, 1, 15)
-    nombre = "CMG_Real_def_260115.zip"
+    dia = date(2026, 1, 14)
+    nombre = "Antecedentes_CMG_Real_def_260114.zip"
     contenido = zip_cen(entorno / "tmp.zip", dia).read_bytes()
     sin_red({cen.url_dia(dia): pagina(UP + nombre), UP + nombre: contenido})
-    runner.invoke(cli.app, ["descargar-cen", "--desde", "2026-01-15", "--hasta", "2026-01-15"])
+    runner.invoke(cli.app, ["descargar-cen", "--desde", "2026-01-14", "--hasta", "2026-01-14"])
 
     r = runner.invoke(cli.app, ["ingerir-pagina"])
     assert r.exit_code == cli.SALIDA_OK, r.output
@@ -465,7 +480,7 @@ def test_descargar_cen_con_el_sitio_caido_explica_como_retomar(
 
     sin_red({})
     monkeypatch.setattr(cli, "_sesion", lambda: Caido())
-    r = runner.invoke(cli.app, ["descargar-cen", "--desde", "2026-01-15", "--hasta", "2026-01-15"])
+    r = runner.invoke(cli.app, ["descargar-cen", "--desde", "2026-01-14", "--hasta", "2026-01-14"])
     assert r.exit_code == cli.SALIDA_ERROR
     assert "no respondio" in r.stderr
     assert "retomar" in r.stderr

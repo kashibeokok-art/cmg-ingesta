@@ -1,0 +1,50 @@
+# =============================================================================
+#  Linea base: como era el sitio del Coordinador cuando se construyo el programa
+# =============================================================================
+#
+# Antes de descargar, el programa compara el sitio de HOY contra estos
+# parametros (chequeo previo, quality/linea_base.py). Si algo ESTRUCTURAL cambio
+# (las marcas del HTML, el dia de referencia ya no trae sus documentos, el indice
+# no lista los años), se DETIENE sin bajar nada y deja un reporte en data/alertas/.
+#
+# Que un dia tenga revisiones nuevas (v2, v3) es normal: el chequeo lo informa,
+# pero no detiene nada.
+#
+# Verificado contra el sitio real el 2026-10-06 y el 2026-10-08. Si el
+# Coordinador rediseña su sitio y el programa se adapta, actualizar este archivo
+# con los valores nuevos (y el fixture tests/fixtures/dia_2026-01-15.html).
+
+[indice]
+# La pagina que lista los años. El programa lee de aqui el sufijo de cada año.
+url = "https://www.coordinador.cl/mercados/documentos/transferencias-economicas/costo-marginal-real/"
+# Años que el indice tiene que seguir listando (el programa descarga desde 2024-08).
+anios = [2024, 2025, 2026]
+
+[marcadores]
+# Textos que la pagina de un dia tiene que contener. De ellos depende el lector:
+# si falta uno, los documentos dejarian de leerse bien.
+clase_etiqueta = "informes-estudio-Titulo"   # span con el titulo del documento
+clase_fecha = "documentos-Publicar-Fecha"    # span con la fecha de publicacion
+texto_fecha = "Fecha de publicaci"           # "Fecha de publicación: dd/mm/aaaa"
+ruta_archivos = "/wp-content/uploads/"       # donde viven los ZIP
+texto_enlace = "Descargar ZIP"               # texto del boton de cada ZIP
+
+# Un dia cuyo contenido se conoce. Se pide su pagina y se compara documento por
+# documento. Conviene un dia antiguo, con definitivo ya publicado.
+[dia_referencia]
+fecha = "2026-01-15"
+
+[[dia_referencia.documentos]]
+nombre = "Antecedentes_CMG_Real_def_260115.zip"
+etiqueta = "Antecedentes Costo Marginal Real Definitivo"
+publicado = "2026-01-22"
+
+[[dia_referencia.documentos]]
+nombre = "Antecedentes_CMG_Real_pre_260115.zip"
+etiqueta = "Antecedentes Costo Marginal Real Preliminar"
+publicado = "2026-01-16"
+
+[sitemap]
+# De aqui salen las revisiones de dias antiguos (extract/sitemap_cen.py).
+url = "https://www.coordinador.cl/sitemap.xml"
+debe_contener = "documentos-sitemap"
