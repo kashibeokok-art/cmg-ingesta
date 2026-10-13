@@ -32,7 +32,9 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         if clave.startswith("CMGI_"):
             monkeypatch.delenv(clave, raising=False)
     monkeypatch.chdir(tmp_path)  # que no lea el .env real
-    return tmp_path / "data"
+    carpeta = tmp_path / "data"
+    carpeta.mkdir()  # un equipo ya instalado la tiene (A17)
+    return carpeta
 
 
 @pytest.fixture
@@ -278,3 +280,15 @@ def test_menu_un_error_no_cierra_el_programa(
     assert "Error: algo salio mal" in g.texto
     assert "RuntimeError: inesperado" in g.texto
     assert g.salida[-1] == "  Opcion: "  # volvio al menu y salio con 0
+
+
+def test_actualizar_sin_carpeta_de_datos_no_descarga(
+    data_dir: Path, llamadas: dict[str, Any]
+) -> None:
+    """REGRESION A17: con CMGI_DATA_DIR mal escrita no se baja nada a una carpeta nueva."""
+    data_dir.rmdir()
+    g = Guion()
+    app.actualizar(contexto_red(data_dir, g))
+    assert "no existe la carpeta de datos" in g.texto
+    assert llamadas == {}
+    assert not data_dir.exists()

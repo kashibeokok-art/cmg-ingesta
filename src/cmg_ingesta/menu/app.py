@@ -76,8 +76,8 @@ class Contexto:
     def descargas(self) -> Path:
         return conexion.ruta_descargas(self.cfg.data_dir)
 
-    def abrir(self) -> duckdb.DuckDBPyConnection:
-        return conexion.abrir(self.cfg.data_dir)
+    def abrir(self, crear: bool = False) -> duckdb.DuckDBPyConnection:
+        return conexion.abrir(self.cfg.data_dir, crear=crear)
 
 
 # ------------------------------------------------------------------- cabecera
@@ -359,6 +359,11 @@ def _leer_fecha(texto: str) -> date | None:
 def actualizar(ctx: Contexto) -> None:
     """Descarga lo nuevo de la pagina del CEN y lo pasa a la base."""
     c = ctx.consola
+    try:
+        conexion.exigir_carpeta(ctx.cfg.data_dir)  # antes de bajar nada (A17)
+    except ValueError as e:
+        c.decir(f"\n  {e}")
+        return
     hoy = ctx.hoy()
     ayer = hoy - timedelta(days=1)
     sugerido = cen.desde_sugerido(cen.leer_manifiesto(ctx.bronze_cen), ayer)
@@ -408,7 +413,7 @@ def actualizar(ctx: Contexto) -> None:
         return
     c.decir(f"\n  {len(nuevos)} archivo(s) nuevo(s). Pasando a la base...")
 
-    con = ctx.abrir()
+    con = ctx.abrir()  # la carpeta ya se exigio al empezar
     try:
         reporte, hallazgos_ingesta = ingerir_cen.ingerir_pagina(
             con,

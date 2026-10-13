@@ -28,6 +28,7 @@ from typing import Annotated, NoReturn
 
 import duckdb
 import typer
+from pydantic import ValidationError
 
 from cmg_ingesta import conexion
 from cmg_ingesta.config import Settings
@@ -58,12 +59,34 @@ app = typer.Typer(
 
 
 def _settings() -> Settings:
-    return Settings()
+    """La configuracion. Un `.env` con una CMGI_* desconocida termina con mensaje (1)."""
+    try:
+        return Settings()
+    except ValidationError as e:
+        detalle = "; ".join(str(err["msg"]).removeprefix("Value error, ") for err in e.errors())
+        typer.echo(f"Error en la configuracion: {detalle}", err=True)
+        raise typer.Exit(SALIDA_ERROR) from e
 
 
-def _abrir(cfg: Settings) -> tuple[object, Path]:
-    con = conexion.abrir(cfg.data_dir)
-    return con, conexion.ruta_silver(cfg.data_dir)
+def _exigir_carpeta(cfg: Settings) -> None:
+    """Para los comandos que escriben bajo data_dir sin abrir DuckDB (descarga, vigilancia)."""
+    try:
+        conexion.exigir_carpeta(cfg.data_dir)
+    except ValueError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(SALIDA_ERROR) from e
+
+
+def _conectar(cfg: Settings, crear: bool = False) -> duckdb.DuckDBPyConnection:
+    """Abre DuckDB. Si la carpeta de datos no existe, termina con un mensaje claro (1).
+
+    Va fuera del `try` de cada comando, por eso atrapa aqui su propio error.
+    """
+    try:
+        return conexion.abrir(cfg.data_dir, crear=crear)
+    except ValueError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(SALIDA_ERROR) from e
 
 
 def _sesion() -> cen.Sesion:
@@ -176,7 +199,7 @@ def estado() -> None:
         typer.echo("Corre primero:  cmg migrar-historico <carpeta CMG_DB>")
         raise typer.Exit(SALIDA_ERROR)
 
-    con = conexion.abrir(cfg.data_dir)
+    con = _conectar(cfg)
     try:
         res = leer.resumen_base(con, base)
         cob = _cobertura(con, cfg)
@@ -207,7 +230,7 @@ def migrar_historico(
         _uso(f"No existe la carpeta: {origen}")
 
     destino = conexion.ruta_silver(cfg.data_dir)
-    con = conexion.abrir(cfg.data_dir)
+    con = _conectar(cfg, crear=True)  # la unica que construye la base desde cero
     try:
         reporte = migrar.migrar_historico(con, origen, destino, avisar=typer.echo)
     except ValueError as e:
@@ -241,7 +264,7 @@ def barras(
     """Lista las barras de la base, filtrando por nombre."""
     cfg = _settings()
     base = conexion.ruta_silver(cfg.data_dir)
-    con = conexion.abrir(cfg.data_dir)
+    con = _conectar(cfg)
     try:
         todas = leer.barras(con, base)
     finally:
@@ -279,7 +302,7 @@ def descargar(
         )
     cfg = _settings()
     base = conexion.ruta_silver(cfg.data_dir)
-    con = conexion.abrir(cfg.data_dir)
+    con = _conectar(cfg)
     try:
         primero, ultimo = leer.rango_disponible(con, base)
         desde, hasta = _periodo(periodo_texto, primero, ultimo)
@@ -311,7 +334,7 @@ def bloques(
     """Muestra en pantalla el promedio mensual por bloque de una barra."""
     cfg = _settings()
     base = conexion.ruta_silver(cfg.data_dir)
-    con = conexion.abrir(cfg.data_dir)
+    con = _conectar(cfg)
     try:
         primero, ultimo = leer.rango_disponible(con, base)
         desde, hasta = _periodo(periodo_texto, primero, ultimo)
@@ -337,7 +360,7 @@ def riesgo(
     """Riesgo nodal entre dos barras: diferencia de CMg en USD y en porcentaje."""
     cfg = _settings()
     base = conexion.ruta_silver(cfg.data_dir)
-    con = conexion.abrir(cfg.data_dir)
+    con = _conectar(cfg)
     try:
         primero, ultimo = leer.rango_disponible(con, base)
         desde, hasta = _periodo(periodo_texto, primero, ultimo)
@@ -387,6 +410,7 @@ def descargar_cen(
     if d1 > d2:
         _uso(f"--desde ({d1}) es posterior a --hasta ({d2}).")
     _validar_pausa(pausa)
+    _exigir_carpeta(cfg)
 
     carpeta = conexion.ruta_bronze_cen(cfg.data_dir)
     typer.echo(f"Descargando {d1} a {d2} en {carpeta}")
@@ -420,7 +444,7 @@ def ingerir_pagina(
     hallazgo critico no entra y se reporta.
     """
     cfg = _settings()
-    con = conexion.abrir(cfg.data_dir)
+    con = _conectar(cfg)
     try:
         reporte, hallazgos = ingerir_cen.ingerir_pagina(
             con,
@@ -466,6 +490,7 @@ def vigilar_fuente(
     if dias < 1:
         _uso("--dias debe ser al menos 1.")
     _validar_pausa(pausa)
+    _exigir_carpeta(cfg)
     hoy = _hoy()
     try:
         hallazgos = deriva.vigilar_fuente(
@@ -484,7 +509,7 @@ def vigilar_fuente(
         raise typer.Exit(SALIDA_ERROR) from e
 
     # lo que solo Silver puede ver: huecos del Maestro y dias bajados sin ingerir
-    con = conexion.abrir(cfg.data_dir)
+    con = _conectar(cfg)
     try:
         hallazgos += cobertura.revisar(_cobertura(con, cfg))
     finally:

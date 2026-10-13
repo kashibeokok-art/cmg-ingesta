@@ -212,6 +212,33 @@ y `PPA_` en `ppa-pipeline`. Si una entrada aplica solo a un proyecto, decirlo ex
 - **Lección:** un código de salida es un contrato con quien llama, y las librerías ya ocupan
   algunos. Se prueba **invocando el comando mal escrito**, no solo los caminos de la función.
 
+### A16. Justificar una configuración con un valor por defecto que no se consultó
+- **Afirmé** (docstring de `conexion.abrir`): que sin `temp_directory` DuckDB desborda "al temporal
+  del sistema, que en Windows suele estar en el disco C".
+- **Realidad:** en DuckDB 1.5.6, con base en memoria, el valor por defecto es **`.tmp`**, una ruta
+  **relativa a la carpeta desde donde se ejecuta** el comando (el mismo tipo de defecto que A10).
+- **Evidencia (2026-10-13):** `duckdb.connect().execute("select current_setting('temp_directory')")`
+  → `.tmp`. Encontrado en la revisión guiada de `conexion.py`.
+- **Corrección:** la conclusión (fijar `temp_directory`) seguía siendo correcta; se corrigió la
+  razón en el docstring.
+- **Lección:** antes de escribir "sin esto, la librería hace X", consultar el valor por defecto
+  real en la versión instalada (`current_setting`, `inspect.signature`, `model_config`). Una
+  razón falsa para una práctica correcta hace que alguien la quite cuando la razón deje de aplicar.
+
+### A17. Una protección que cubre solo parte de los caminos, documentada como total
+- **Error (sesión de revisión guiada, 2026-10-13):** se exigió que la carpeta de datos existiera
+  para atrapar un `CMGI_DATA_DIR` mal escrito, pero solo en `conexion.abrir` (DuckDB). Y se
+  documentó que "solo una `CMGI_*` desconocida en el `.env` hace fallar el arranque".
+- **Evidencia (probado con la CLI):** con `CMGI_DATA_DIR=...\dta`, `descargar-cen` creaba `dta/` y
+  descargaba ahí (exit 0) y `vigilar-fuente` también la creaba (exit 3). Y un `.env` con
+  `SQL_SERVIDOR=192.168.0.85` hacía fallar `Settings()` con `extra_forbidden`: rechazaba
+  **cualquier** variable ajena, justo lo que necesitará el `.env` del servidor con la API.
+- **Corrección:** `conexion.exigir_carpeta` en todos los comandos que escriben bajo `data_dir`;
+  `extra="ignore"` + `_sin_cmgi_desconocidas` para detener solo las `CMGI_*` desconocidas.
+- **Lección:** una protección se prueba **por cada camino que lleva al daño** (aquí: todo comando
+  que escribe en disco), no solo por el que motivó el cambio. Y una afirmación sobre qué rechaza
+  una librería se prueba también con el caso que **no** debería rechazar.
+
 ---
 
 ## B. Procesamiento de datos (del código que se está portando)

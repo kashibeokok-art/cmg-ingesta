@@ -22,9 +22,18 @@ Copy-Item .env.example .env
 
 | Variable | Para qué |
 |---|---|
-| `CMGI_DATA_DIR` | carpeta raíz de los datos (por defecto `data`) |
-| `CMGI_LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING` o `ERROR` |
-| `CMGI_CEN_API_KEY` | sin uso: se decidió no usar la API (queda por compatibilidad) |
+| `CMGI_DATA_DIR` | carpeta raíz de los datos (por defecto `data`); tiene que existir, salvo para `cmg migrar-historico` |
+
+Es la única variable. `CMGI_LOG_LEVEL` y `CMGI_CEN_API_KEY` se quitaron (2026-10-13): nadie las
+usaba. Si siguen en un `.env` viejo, el programa no arranca hasta comentarlas o borrarlas.
+
+- **Una `CMGI_*` que el programa no conoce lo detiene**, venga del `.env` o del sistema: casi
+  siempre es un nombre mal escrito. El mensaje dice cuál es.
+- **Las variables de otras herramientas se ignoran**: el `.env` del servidor puede tener también
+  los datos de conexión a SQL.
+- **La carpeta de datos no se crea sola**, ni siquiera al descargar: si la ruta estuviera mal
+  escrita, ~23 GB irían a una carpeta equivocada. En un equipo nuevo, créala una vez con
+  `mkdir data`.
 
 `.env` nunca va a git. `.env.example` sí, y por eso **no lleva valores**.
 

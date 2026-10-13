@@ -19,32 +19,73 @@ def sin_archivo_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 
 def test_valores_por_defecto() -> None:
-    """Sin variables ni .env, se usan los valores por defecto de la clase."""
-    config = Settings()
-
-    assert config.data_dir == RAIZ_PROYECTO / "data"
-    assert config.log_level == "INFO"
-    assert config.cen_api_key is None
+    """Sin variables ni .env (conftest lo apaga), se usan los valores por defecto."""
+    assert Settings().data_dir == RAIZ_PROYECTO / "data"
 
 
-def test_lee_variable_de_entorno(monkeypatch: pytest.MonkeyPatch) -> None:
-    """CMGI_LOG_LEVEL del entorno reemplaza al valor por defecto."""
-    monkeypatch.setenv("CMGI_LOG_LEVEL", "DEBUG")
+def test_el_unico_campo_es_data_dir() -> None:
+    """`log_level` y `cen_api_key` se quitaron porque nadie los leia (2026-10-13)."""
+    assert list(Settings.model_fields) == ["data_dir"]
 
-    config = Settings()
 
-    assert config.log_level == "DEBUG"
+def test_lee_variable_de_entorno(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """CMGI_DATA_DIR del entorno reemplaza al valor por defecto."""
+    monkeypatch.setenv("CMGI_DATA_DIR", str(tmp_path / "desde_entorno"))
+
+    assert Settings().data_dir == tmp_path / "desde_entorno"
 
 
 def test_lee_archivo_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Si no hay variable de entorno, se lee el archivo .env."""
     env = tmp_path / ".env"
-    env.write_text("CMGI_LOG_LEVEL=WARNING\n", encoding="utf-8")
+    env.write_text(f"CMGI_DATA_DIR={tmp_path / 'desde_env'}\n", encoding="utf-8")
     monkeypatch.setitem(Settings.model_config, "env_file", env)
 
-    config = Settings()
+    assert Settings().data_dir == tmp_path / "desde_env"
 
-    assert config.log_level == "WARNING"
+
+def test_variable_desconocida_en_env_falla(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Un `.env` viejo (o un nombre mal escrito) no se ignora en silencio: falla al arrancar."""
+    env = tmp_path / ".env"
+    env.write_text("CMGI_LOG_LEVEL=DEBUG\n", encoding="utf-8")
+    monkeypatch.setitem(Settings.model_config, "env_file", env)
+
+    with pytest.raises(ValidationError, match="CMGI_LOG_LEVEL"):
+        Settings()
+
+
+def test_una_variable_ajena_en_env_se_ignora(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """REGRESION A17: un `.env` compartido con otra herramienta (p. ej. la API de SQL)
+    hacia fallar `cmg` con "Extra inputs are not permitted"."""
+    env = tmp_path / ".env"
+    env.write_text("SQL_SERVIDOR=192.168.0.85\nSQL_PUERTO=5433\n", encoding="utf-8")
+    monkeypatch.setitem(Settings.model_config, "env_file", env)
+
+    assert Settings().data_dir == RAIZ_PROYECTO / "data"
+
+
+def test_una_cmgi_comentada_no_cuenta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Como quedo el .env real: las variables viejas comentadas con #."""
+    env = tmp_path / ".env"
+    env.write_text("# sin uso: CMGI_LOG_LEVEL=INFO\nCMGI_DATA_DIR=data\n", encoding="utf-8")
+    monkeypatch.setitem(Settings.model_config, "env_file", env)
+
+    assert Settings().data_dir == RAIZ_PROYECTO / "data"
+
+
+def test_una_cmgi_desconocida_del_sistema_tambien_falla(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CMGI_DAT_DIR", "data")
+    with pytest.raises(ValidationError, match="CMGI_DAT_DIR"):
+        Settings()
+
+
+def test_variable_vacia_cuenta_como_no_configurada(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CMGI_DATA_DIR= (vacía) usa el valor por defecto, por `env_ignore_empty`."""
+    monkeypatch.setenv("CMGI_DATA_DIR", "")
+
+    assert Settings().data_dir == RAIZ_PROYECTO / "data"
 
 
 def test_la_raiz_es_la_carpeta_del_proyecto() -> None:
@@ -62,32 +103,3 @@ def test_data_dir_absoluto_se_respeta(monkeypatch: pytest.MonkeyPatch, tmp_path:
     monkeypatch.setenv("CMGI_DATA_DIR", str(tmp_path / "otra"))
 
     assert Settings().data_dir == tmp_path / "otra"
-
-
-@pytest.mark.parametrize("log_invalido", ["VERBOSO", "debug", "TRACE", "INFOs"])
-def test_rechaza_nivel_invalido(monkeypatch: pytest.MonkeyPatch, log_invalido: str) -> None:
-    """Un log_level inválido debe fallar al iniciar (fail fast), no usar el valor por defecto."""
-    monkeypatch.setenv("CMGI_LOG_LEVEL", log_invalido)
-
-    with pytest.raises(ValidationError):
-        Settings()
-
-
-def test_secreto_no_se_imprime(monkeypatch: pytest.MonkeyPatch) -> None:
-    """La clave se oculta al imprimir la configuración, pero se puede leer explícitamente."""
-    monkeypatch.setenv("CMGI_CEN_API_KEY", "clave-super-secreta")
-
-    config = Settings()
-
-    assert "clave-super-secreta" not in str(config)
-    assert config.cen_api_key is not None
-    assert config.cen_api_key.get_secret_value() == "clave-super-secreta"
-
-
-def test_clave_vacia_cuenta_como_no_configurada(monkeypatch: pytest.MonkeyPatch) -> None:
-    """CMGI_CEN_API_KEY= (vacío, como en .env.example) se interpreta como None."""
-    monkeypatch.setenv("CMGI_CEN_API_KEY", "")
-
-    config = Settings()
-
-    assert config.cen_api_key is None

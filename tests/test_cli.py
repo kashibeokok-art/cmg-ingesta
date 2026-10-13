@@ -98,6 +98,15 @@ def test_barras_filtro_sin_resultados(con_base: Path) -> None:
     assert "0 de 2" in r.stdout
 
 
+def test_carpeta_de_datos_mal_escrita_falla_claro_y_no_la_crea(entorno: Path) -> None:
+    """REGRESION: antes `barras` creaba la carpeta y caia con un IOException de DuckDB."""
+    r = runner.invoke(cli.app, ["barras"])
+    assert r.exit_code == cli.SALIDA_ERROR
+    assert "no existe la carpeta de datos" in r.output
+    assert "CMGI_DATA_DIR" in r.output
+    assert not (entorno / "data").exists()
+
+
 # ---------------------------------------------------------------- bloques
 
 
@@ -191,10 +200,10 @@ def test_migrar_sin_meses_en_el_tramo(entorno: Path) -> None:
     assert "no se encontro" in r.stderr
 
 
-def test_migrar_con_hallazgos_sale_con_codigo_2(
+def test_migrar_con_hallazgos_sale_con_codigo_3(
     con: duckdb.DuckDBPyConnection, entorno: Path
 ) -> None:
-    """Un mes con la hora fantasma de septiembre: termina, pero avisa con exit 2."""
+    """Un mes con la hora fantasma de septiembre: termina, pero avisa con exit 3."""
     vieja = entorno / "vieja"
     carpeta = vieja / "anio=2023" / "mes=9"
     carpeta.mkdir(parents=True)
@@ -292,8 +301,14 @@ def sitio_de_referencia() -> dict[str, str | bytes]:
 
 
 @pytest.fixture
-def sin_red(monkeypatch: pytest.MonkeyPatch) -> Callable[[dict[str, str | bytes]], Sesion]:
-    """Devuelve una funcion que instala la sesion falsa en el CLI."""
+def sin_red(
+    entorno: Path, monkeypatch: pytest.MonkeyPatch
+) -> Callable[[dict[str, str | bytes]], Sesion]:
+    """Devuelve una funcion que instala la sesion falsa en el CLI.
+
+    Crea la carpeta de datos: un equipo ya instalado la tiene (A17).
+    """
+    (entorno / "data").mkdir(exist_ok=True)
     monkeypatch.setattr("time.sleep", lambda _s: None)
     monkeypatch.setattr(cli, "_hoy", lambda: HOY)
 
@@ -337,10 +352,10 @@ def test_descargar_cen_dos_veces_no_vuelve_a_bajar(
     assert sesion.pedidos.count(UP + nombre) == 1
 
 
-def test_descargar_cen_un_dia_sin_publicar_sale_con_codigo_2(
+def test_descargar_cen_un_dia_sin_publicar_sale_con_codigo_3(
     entorno: Path, sin_red: Callable[..., Sesion]
 ) -> None:
-    """La revision manual se pide con exit 2 y un reporte en data/alertas."""
+    """La revision manual se pide con exit 3 y un reporte en data/alertas."""
     dia = date(2026, 1, 14)
     sin_red({cen.url_dia(dia): pagina()})
 
@@ -408,12 +423,13 @@ def test_descargar_e_ingerir_deja_el_mes_consultable(
 
 
 def test_ingerir_pagina_sin_bronze_explica(entorno: Path) -> None:
+    (entorno / "data").mkdir()
     r = runner.invoke(cli.app, ["ingerir-pagina"])
     assert r.exit_code == cli.SALIDA_ERROR
     assert "descargar-cen" in r.stderr
 
 
-def test_vigilar_fuente_sin_publicaciones_sale_con_codigo_2(
+def test_vigilar_fuente_sin_publicaciones_sale_con_codigo_3(
     entorno: Path, sin_red: Callable[..., Sesion]
 ) -> None:
     indice = (FIXTURES / "indice_anios.html").read_text(encoding="utf-8")
@@ -516,3 +532,44 @@ def test_periodo_bien_escrito_pero_sin_datos_no_es_error_de_uso(con_base: Path) 
     """'2019' se entiende; lo que pasa es que la base no tiene 2019: eso es 1, no 2."""
     r = runner.invoke(cli.app, ["bloques", "BARRA_1", "--periodo", "2019"])
     assert r.exit_code == cli.SALIDA_ERROR
+
+
+# ------------------------------------------- carpeta de datos inexistente (A17)
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["descargar-cen", "--desde", "2026-10-01", "--hasta", "2026-10-01"],
+        ["vigilar-fuente", "--dias", "1"],
+    ],
+)
+def test_descarga_y_vigilancia_no_crean_una_carpeta_mal_escrita(
+    entorno: Path, monkeypatch: pytest.MonkeyPatch, args: list[str]
+) -> None:
+    """REGRESION A17: con CMGI_DATA_DIR mal escrita, descargar-cen creaba la carpeta y
+    bajaba ahi sin avisar. Ahora se detiene ANTES de pedir nada al sitio."""
+    pedidos: list[str] = []
+
+    class Espia:
+        def get(self, url: str, timeout: float = 30.0) -> Respuesta:
+            pedidos.append(url)
+            return Respuesta(404)
+
+    monkeypatch.setattr(cli, "_sesion", lambda: Espia())
+    r = runner.invoke(cli.app, args)
+    assert r.exit_code == cli.SALIDA_ERROR
+    assert "no existe la carpeta de datos" in r.stderr
+    assert "mkdir" in r.stderr
+    assert not (entorno / "data").exists()
+    assert pedidos == []
+
+
+def test_una_cmgi_desconocida_en_el_sistema_termina_con_mensaje(
+    entorno: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CMGI_DAT_DIR", "data")  # mal escrita
+    r = runner.invoke(cli.app, ["estado"])
+    assert r.exit_code == cli.SALIDA_ERROR
+    assert "CMGI_DAT_DIR" in r.stderr
+    assert "Traceback" not in r.output

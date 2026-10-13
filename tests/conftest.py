@@ -30,7 +30,7 @@ Sembrar = Callable[..., None]
 
 @pytest.fixture(autouse=True)
 def sin_env_del_proyecto(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ningun test lee el `.env` real del proyecto (tiene la clave y la ruta de datos real).
+    """Ningun test lee el `.env` real del proyecto (tiene la ruta de datos real).
 
     `autouse=True` la aplica a TODOS los tests sin que la pidan. Antes bastaba con
     cambiar de carpeta, porque el `.env` se buscaba en la carpeta actual; ahora se

@@ -59,21 +59,27 @@ Modo mentor (§2): Claude diseña, explica y revisa; **el usuario escribe el có
 | **M5** | **Ingesta de (b) a Silver** (`extract/{pagina_cen,ingerir_cen}.py`) | ✅ 2026-10-06 |
 | **M8** | **Menú interactivo** (`menu/{busqueda,consola,app}.py`), estilo `CMG_Portable` | ✅ 2026-10-07 |
 
-**474 tests · `mypy --strict` limpio · `ruff` limpio.**
+**596 tests · `mypy --strict` limpio · `ruff` limpio** (2026-10-13).
 
 **Uso diario:** `uv run cmg` sin argumentos abre el menú. Los comandos siguen para automatizar.
 
 **Flujo diario de la fuente (b):**
 
 ```
-cmg descargar-cen --desde 2025-01-01      # Bronze: ZIP + manifiesto (idempotente)
+cmg descargar-cen --desde 2024-08-01      # Bronze: ZIP + manifiesto (idempotente)
 cmg ingerir-pagina                        # Silver: solo los meses que cambiaron
 cmg vigilar-fuente                        # tarea programada: exit 3 = revisar data/alertas/
 ```
 
-**Pendiente con el usuario:** el **backfill real 2025-01 → hoy** (~640 días, ~1.300 ZIP, ~16 GB,
-~40 min de descarga con pausa de 1 s + ~16 min de ingesta). No se corre sin su aprobación: el
-brief de la sesión 3 limitó las pruebas reales a 8 días (ya se usaron 7).
+**Backfill 2024-08-01 → hoy (2026-10-13): lo corre el usuario.** Son ~801 días hasta 2026-10-10
+(`cmg estado`); escalando la estimación anterior de 640 días: ~1.600 ZIP, ~20 GB, ~50 min de
+descarga con pausa de 1 s + ~20 min de ingesta. El usuario **borró `data/bronze/` el 2026-10-13**
+a propósito, para subir el programa a un servidor, y va a descargar de nuevo. Claude no descarga
+a Bronze.
+
+**Siguiente etapa (plan del usuario, 2026-10-13):** descargar → subir lo procesado (Silver) a
+**SQL** → una **API** que consulte SQL directamente, para responder más rápido que ejecutar el
+programa completo en el servidor.
 
 **Resultado de la migración (M3, corrida real):** 201.810.260 filas, 48 meses, 213,5 MB,
 3,3 minutos. Las validaciones detectaron **solas** los 10 días defectuosos que el estudio E0
@@ -727,10 +733,14 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho
 - [ ] **E0.3c — Paginación** (`page`/`limit`) y rate limit (`X-Rate-Limit`).
 - [ ] **E0.4 — Normalización** API → esquema canónico, como función pura + tests.
 - [ ] **E0.5 — Comparación** B vs C (y A), las 8 dimensiones de §4.
-- [x] **Usuario: `user_key` obtenida** (2026-10-05). Está en `.env` como `CMGI_CEN_API_KEY`,
+- [x] **Usuario: `user_key` obtenida** (2026-10-05). Estaba en `.env` como `CMGI_CEN_API_KEY`,
   32 caracteres. **Nunca pedirla por chat ni escribirla en un archivo versionado.**
 - ⛔ **E0.3b/E0.3c/E0.4/E0.5 descartados (2026-10-06):** el usuario decidió **no usar la API**.
-  La fuente (b) es solo la página. `config.cen_api_key` queda opcional y sin uso.
+  La fuente (b) es solo la página.
+- 🧹 **2026-10-13:** se quitaron `cen_api_key` y `log_level` de `Settings` (nadie los leía). En el
+  `.env` local quedaron **comentadas** (con su valor) para no perder la clave. Una `CMGI_*`
+  desconocida (del `.env` o del sistema) detiene el arranque; las variables ajenas se ignoran
+  (A17).
 - [x] **M4 — extractor de la página** (2026-10-06). `curl_cffi` (`impersonate="chrome"`): con
   `requests` hay `SSLEOFError` y con `httpx` 403 de Cloudflare por huella TLS (→ A8).
 - [x] **M4b — vigilancia** (2026-10-06). `quality/deriva.py`: adopta solo los slugs de año
@@ -789,6 +799,21 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho
   (pedido del usuario: "los documentos pueden tener varias revisiones").
 
 ## 8. Bitácora
+
+### 2026-10-13 — Sesión 8: revisión de los cambios de la sesión de revisión guiada
+- Se revisaron los cambios sin commitear de otra sesión (config con un solo campo,
+  `conexion.abrir(crear=False)`, `_conectar`, A16). Funcionaban, pero al probar con datos reales
+  aparecieron dos huecos (→ A17):
+  1. `extra_forbidden` rechazaba **cualquier** variable del `.env` que no fuera un campo, no solo
+     las `CMGI_*`: un `SQL_SERVIDOR=...` para la futura API hacía fallar `cmg`. Ahora
+     `extra="ignore"` + `_sin_cmgi_desconocidas` (detiene ante `CMGI_*` desconocidas del `.env` o
+     del sistema). La CLI lo muestra como mensaje, sin traceback.
+  2. La exigencia de carpeta existente solo cubría a DuckDB: `descargar-cen` y `vigilar-fuente`
+     creaban una carpeta mal escrita y descargaban ahí. Ahora `conexion.exigir_carpeta` se usa
+     también en esos comandos y en el menú (Actualizar), antes de pedir nada al sitio. En un
+     equipo nuevo: `mkdir data`.
+- `data/landing/` borrado a pedido del usuario (ZIP de evidencia DST, 97 MB, sin uso en código).
+- 596 tests.
 
 ### 2026-10-09 — Sesión 7b: códigos de salida
 - Detectado en la revisión de `cli.py`: click sale con **2** en sus errores de uso (falta
