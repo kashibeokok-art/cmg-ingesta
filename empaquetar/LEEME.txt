@@ -1,0 +1,30 @@
+CMG_Consulta - Costos marginales por barra del SEN
+====================================================
+
+Como usarlo
+-----------
+1. Doble clic en CMG_Consulta.exe. Arriba dice el rango de datos disponible.
+2. Pestana "CMg de una barra":
+   - Escribe parte del nombre de la barra (ej. "santa elvira 13", "cerro navia 220").
+     Aparecen las 10 mas parecidas con su porcentaje: haz clic en la que quieres.
+   - Escribe las fechas desde y hasta (dd-mm-aaaa) o usa un boton de rango.
+   - "Descargar Excel" y elige donde guardarlo (por defecto, tu carpeta Descargas).
+3. Pestana "Riesgo nodal": igual, eligiendo la barra de referencia y la comparada.
+   Riesgo = CMg(comparada) - CMg(referencia); positivo = la comparada es mas cara.
+
+Que trae el Excel
+-----------------
+- CMg cada 15 minutos, con la version de cada dia (Definitivo v2, Preliminar v1...).
+- Promedios por bloque (A, B, C, Solar, NoSolar, Total) por mes y del rango completo.
+- Version por dia: que documento del Coordinador hay cargado y cuando se publico.
+- Revisiones: los dias que el Coordinador corrigio despues de cargados, y cuanto.
+- Info: barra, rango, formulas y aviso si hay datos preliminares (pueden cambiar).
+
+Bloques: A 23:00-07:59 | B 08:00-17:59 | C 18:00-22:59. Solar = B. NoSolar = A y C.
+
+Si algo falla
+-------------
+- "No se encuentra conexion.ini": falta el archivo de conexion junto al programa.
+- "No se pudo conectar": revisa que estes en la red de la oficina.
+- Windows puede advertir "Windows protegio su PC" la primera vez: "Mas informacion"
+  -> "Ejecutar de todas formas". El programa no esta firmado digitalmente.

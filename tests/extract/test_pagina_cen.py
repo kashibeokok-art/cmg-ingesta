@@ -734,3 +734,31 @@ def test_cambiar_las_reglas_reingiere_los_meses(
     assert correr(con, tmp_path)[0] == []
     monkeypatch.setattr(ingerir_cen, "REGLAS", "otra")
     assert len(correr(con, tmp_path)[0]) == 1
+
+
+# ========================================= lineas de relleno (def_250110, 2026-10-14)
+
+
+def test_las_lineas_vacias_de_relleno_no_entran(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    """Cinco def de 2025-01 traen 52.351 lineas ';;;;;;;;;;' al final del CSV."""
+    bronze(date(2025, 1, 10), definitivo=50.0, relleno=500)
+    reporte, hallazgos = correr(con, tmp_path)
+    assert not ingerir_cen.hay_problemas(reporte)
+    assert silver(con, tmp_path) == [(date(2025, 1, 10), esquema.ORIGEN_PAGINA_DEF, 50.0, 192)]
+    vacias = [h for h in hallazgos if h["tipo"] == "lineas_vacias"]
+    assert len(vacias) == 1 and vacias[0]["severidad"] == "info"
+    assert vacias[0]["evidencia"] == "500 lineas"
+
+
+def test_mes_rehace_solo_ese_mes_aunque_no_haya_cambiado(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    bronze(date(2026, 5, 31))
+    bronze(date(2026, 6, 1))
+    correr(con, tmp_path)
+    reporte, _ = ingerir_cen.ingerir_pagina(
+        con, tmp_path / "bronze", tmp_path / "silver", tmp_path / "staging", meses=[(2026, 6)]
+    )
+    assert [(f["anio"], f["mes"]) for f in reporte] == [(2026, 6)]

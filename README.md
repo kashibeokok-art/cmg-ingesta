@@ -177,6 +177,29 @@ una barra en un periodo, ~12 ms.
 | `cmg.documento` | — | Todos los ZIP del CEN que se descargaron, se usen o no |
 | `cmg.carga_mes` | — | Qué versión de cada mes de Silver está cargada |
 
+### App de consulta para usuarios: `CMG_Consulta.exe`
+
+Una ventana para quien tenga acceso a la carpeta compartida, sin Python: elige una barra
+(búsqueda aproximada, siempre las 10 más parecidas con su %), un rango de días, y descarga un
+Excel con el CMg cada 15 minutos y los promedios por bloque; o el riesgo nodal entre dos barras.
+Lee PostgreSQL con el usuario `cmg_lectura` en modo solo lectura. Código en
+`src/cmg_ingesta/consulta/` (no usa DuckDB ni nada de la ingesta).
+
+```powershell
+powershell -File empaquetar/construir_consulta.ps1   # arma empaquetar/dist/CMG_Consulta (~92 MB)
+uv run cmg-consulta                                  # la misma ventana, en desarrollo
+```
+
+Para instalarla: copiar la carpeta `CMG_Consulta` a la carpeta compartida y, junto al `.exe`,
+crear `conexion.ini` desde `conexion.ini.example` con la clave de `cmg_lectura` (no se versiona).
+El Excel trae: CMg 15 min con la versión de cada día ("Definitivo v2"), bloques por mes y del
+rango (A, B, C, Solar, NoSolar, Total), estadísticas por bloque, versión por día, revisiones del
+rango e Info (avisa si hay días preliminares). Un test exige que los bloques y el riesgo den lo
+mismo que el Gold del programa; con datos reales de 2022-12 la diferencia es 0.
+
+Diagnóstico sin ventana: `CMG_Consulta.exe --prueba BARRA REFERENCIA dd-mm-aaaa dd-mm-aaaa
+CARPETA` escribe los dos Excel y `prueba.log` en CARPETA.
+
 ### Archivos que se editan a mano
 
 | Archivo | Para qué |
@@ -259,7 +282,7 @@ Gold (negocio).
 ## Desarrollar
 
 ```powershell
-uv run pytest          # 675 tests, ninguno toca la red (23 necesitan un PostgreSQL de pruebas: CMG_PRUEBA_PG)
+uv run pytest          # 732 tests, ninguno toca la red (23 necesitan un PostgreSQL de pruebas: CMG_PRUEBA_PG)
 uv run mypy            # tipado estricto
 uv run ruff check .    # linter
 uv run ruff format .   # formateo

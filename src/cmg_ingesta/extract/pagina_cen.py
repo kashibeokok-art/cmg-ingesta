@@ -139,11 +139,17 @@ def _lit(texto: str | Path) -> str:
 
 
 def sql_crudo_un_dia(csv: Path, tipo: str) -> str:
-    """Las 5 columnas que importan del CSV, renombradas y con su tipo. Sin filtrar.
+    """Las 5 columnas que importan del CSV, renombradas y con su tipo.
 
     Se lee todo como texto (`all_varchar`) y se convierte a mano: si DuckDB
     adivina el tipo, la columna DEF de un ZIP pre (todo ceros) sale BIGINT y la
     del def sale DOUBLE. Leer texto y castear deja un solo comportamiento.
+
+    Las lineas VACIAS (`;;;;;;;;;;`: sin barra, fecha ni hora) se descartan. Cinco
+    definitivos de 2025-01 (10, 13, 14, 15 y 16) traen el CSV rellenado hasta 200.000
+    lineas asi, como un export de Excel: 52.351 lineas de relleno cada uno, que
+    entraban a Silver como filas nulas (2026-10-14). Una fila con datos pero sin
+    barra NO se descarta: eso si es un problema, y la validacion lo reporta.
     """
     return f"""
         SELECT BARRA AS barra,
@@ -152,6 +158,7 @@ def sql_crudo_un_dia(csv: Path, tipo: str) -> str:
                CAST(MINUTO AS UTINYINT) AS minuto,
                CAST("{columna_valor(csv, tipo)}" AS DOUBLE) AS cmg_usd_mwh
         FROM read_csv({_lit(csv)}, delim=';', header=true, all_varchar=true)
+        WHERE NOT (BARRA IS NULL AND FECHA IS NULL AND HORA IS NULL)
     """
 
 

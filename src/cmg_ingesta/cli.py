@@ -474,6 +474,10 @@ def ingerir_pagina(
     forzar: Annotated[
         bool, typer.Option(help="Reescribir todos los meses aunque no hayan cambiado.")
     ] = False,
+    mes: Annotated[
+        list[str] | None,
+        typer.Option(help="Solo este mes (AAAA-MM), aunque no haya cambiado. Se puede repetir."),
+    ] = None,
 ) -> None:
     """Pasa a Silver los ZIP del Coordinador ya descargados (2024-08 en adelante).
 
@@ -481,6 +485,10 @@ def ingerir_pagina(
     hallazgo critico no entra y se reporta. Con CMGI_CONSERVAR_ZIP=false en el
     .env, cada ZIP que queda en Silver se reemplaza por un testigo liviano.
     """
+    try:
+        meses = [periodo.parsear_mes(m) for m in mes] if mes else None
+    except ValueError as e:
+        _uso(f"Error: {e}")
     cfg = _settings()
     con = _conectar(cfg)
     try:
@@ -492,6 +500,7 @@ def ingerir_pagina(
             avisar=typer.echo,
             forzar=forzar,
             conservar_zip=cfg.conservar_zip,
+            meses=meses,
         )
     except ValueError as e:
         typer.echo(f"Error: {e}", err=True)

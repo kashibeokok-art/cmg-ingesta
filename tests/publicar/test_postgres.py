@@ -546,3 +546,23 @@ def test_quitar_anteriores_es_todo_o_nada(
     assert uno(carga, "SELECT count(*) FROM cmg.carga_mes") == 3
     assert uno(carga, "SELECT count(*) FROM cmg.mes_barra WHERE fecha < '2023-01-01'") == 3
     assert uno(carga, "SELECT count(*) FROM cmg.cmg_15min WHERE fecha < '2023-01-01'") == 6 * 96
+
+
+def test_un_mes_con_filas_sin_barra_no_se_publica(
+    con: duckdb.DuckDBPyConnection, carga: Conn, tmp_path: Path
+) -> None:
+    """2026-10-14: 261.755 filas nulas en Silver 2025-01 tumbaban publicar-sql (TypeError)."""
+    silver = tmp_path / "silver"
+    mes_silver(con, silver, 2025, 1, 50.0)
+    archivo = pg.archivo_mes(silver, (2025, 1))
+    nuevo = archivo.with_name("nuevo.parquet")
+    con.execute(
+        f"COPY (SELECT * FROM read_parquet('{archivo}') UNION ALL "
+        f"(SELECT * REPLACE (NULL AS barra, NULL AS fecha, NULL AS hora, NULL AS minuto) "
+        f"FROM read_parquet('{archivo}') LIMIT 3)) TO '{nuevo}' (FORMAT PARQUET)"
+    )
+    nuevo.replace(archivo)
+
+    with pytest.raises(ValueError, match="3 filas sin barra.*ingerir-pagina --mes 2025-01"):
+        publicar(con, carga, tmp_path)
+    assert pg.meses_en_la_base(carga) == []

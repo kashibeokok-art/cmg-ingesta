@@ -389,6 +389,16 @@ def publicar_mes(
     archivo = archivo_mes(silver, mes)
     todos, elegidos = documentos_del_mes(bronze, mes)
 
+    # un mes con filas sin clave no se sube: se diria en la base algo que no es
+    nulas = con.execute(
+        f"SELECT count(*) FROM read_parquet({_lit(archivo)}) "
+        "WHERE barra IS NULL OR fecha IS NULL OR hora IS NULL OR minuto IS NULL"
+    ).fetchone()
+    if nulas and nulas[0]:
+        raise ValueError(
+            f"el Silver de {mes[0]}-{mes[1]:02d} tiene {nulas[0]:,} filas sin barra, fecha u "
+            f"hora. Rehazlo y vuelve a publicar:  cmg ingerir-pagina --mes {mes[0]}-{mes[1]:02d}"
+        )
     fila_nombres = con.execute(
         f"SELECT list(DISTINCT barra) FROM read_parquet({_lit(archivo)})"
     ).fetchone()

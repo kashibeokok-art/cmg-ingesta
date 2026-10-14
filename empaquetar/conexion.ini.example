@@ -1,0 +1,9 @@
+; Conexion de CMG_Consulta a la base cmg_cen.
+; Copiar como "conexion.ini" junto a CMG_Consulta.exe y poner la clave de cmg_lectura.
+; Ese usuario SOLO LEE: quien abra este archivo puede consultar la base, no cambiarla.
+[postgres]
+host = 192.168.0.85
+port = 5433
+dbname = cmg_cen
+user = cmg_lectura
+password = CLAVE_DE_CMG_LECTURA

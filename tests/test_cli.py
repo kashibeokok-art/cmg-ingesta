@@ -650,3 +650,10 @@ def test_una_carpeta_elegida_que_no_existe_detiene_sin_crearla(
     assert r.exit_code == cli.SALIDA_ERROR
     assert variable in r.stderr
     assert not falta.exists()
+
+
+def test_ingerir_pagina_con_un_mes_mal_escrito_es_error_de_uso(entorno: Path) -> None:
+    (entorno / "data").mkdir()
+    r = runner.invoke(cli.app, ["ingerir-pagina", "--mes", "enero"])
+    assert r.exit_code == cli.SALIDA_USO
+    assert "AAAA-MM" in r.output

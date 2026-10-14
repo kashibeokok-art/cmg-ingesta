@@ -215,6 +215,7 @@ def ingerir_pagina(
     avisar: Avisar = _nada,
     forzar: bool = False,
     conservar_zip: bool = True,
+    meses: list[Mes] | None = None,
 ) -> tuple[list[FilaReporteCen], list[deriva.Hallazgo]]:
     """Ingiere a Silver los meses desde el inicio de la fuente (2024-08) con ZIP en `bronze`.
 
@@ -222,6 +223,8 @@ def ingerir_pagina(
     cada mes). Con `forzar=True` se reescriben todos los meses aunque su huella
     no haya cambiado. Con `conservar_zip=False`, cada ZIP que ya quedo en Silver
     (o que fue superado por una version mas nueva) se reemplaza por su testigo.
+    Con `meses`, solo esos meses, y se reescriben aunque su huella no haya cambiado
+    (para rehacer uno puntual sin tocar el resto).
 
     Devuelve una fila de reporte por mes procesado y los hallazgos de deriva.
     """
@@ -252,12 +255,15 @@ def ingerir_pagina(
     hallazgos: list[deriva.Hallazgo] = []
     staging.mkdir(parents=True, exist_ok=True)
 
-    meses = por_mes(elegidos)
-    for mes in sorted(set(meses) | set(dudosos_por_mes)):
-        dias = meses.get(mes, [])
+    por_mes_elegidos = por_mes(elegidos)
+    for mes in sorted(set(por_mes_elegidos) | set(dudosos_por_mes)):
+        if meses is not None and mes not in meses:
+            continue
+        dias = por_mes_elegidos.get(mes, [])
         dudosos = dudosos_por_mes.get(mes, [])
         firma = huella(dias)
-        if not forzar and not dudosos and estado.get(_clave(mes)) == firma:
+        forzado = forzar or meses is not None
+        if not forzado and not dudosos and estado.get(_clave(mes)) == firma:
             avisar(f"{_clave(mes)}: sin cambios, se omite")
             continue
 

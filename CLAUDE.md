@@ -805,6 +805,28 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho
 
 ## 8. Bitácora
 
+### 2026-10-14 — Sesión 10b: filas vacías en Silver 2025-01 (error A20)
+- `publicar-sql` se cayó en 2025-01: 261.755 filas sin barra/fecha/hora en Silver, de líneas de
+  relleno `;;;;` en cinco `def` de enero. Datos reales completos. Corregido en la lectura, en el
+  reporte (`lineas_vacias`) y con una validación en `publicar-sql`. Nuevo `ingerir-pagina --mes`.
+
+### 2026-10-14 — Sesión 10: app de consulta CMG_Consulta.exe
+- Pedido: app para cualquiera con acceso a \SAFIRA_CL1 que descargue el CMg de una barra en un
+  rango de días (crudo y por bloques) y el riesgo nodal entre dos barras. Decisiones del usuario:
+  **directo a PostgreSQL** con `cmg_lectura` (sin API), **ventana con formulario**, **Excel**.
+- `src/cmg_ingesta/consulta/`: `conexion` (`conexion.ini` junto al exe; sesión
+  `default_transaction_read_only`), `datos` (todo el cálculo en PostgreSQL, por día, fila por mes
+  + "Rango completo"), `buscar` (búsqueda aproximada por palabras: prefijos, números sin ceros,
+  abreviaturas del CEN —C.NAVIA, D.ALMAGRO, STA— y tipeos; **siempre 10 opciones con %, nunca
+  elige sola**, pedido del usuario), `excel`, `informes`, `ventana` (tkinter, consulta en hilo).
+- Pedido del usuario: la **versión** de cada dato. Cada cuarto lleva "Definitivo v2" /
+  "Preliminar v1" (de cmg.dia + cmg.documento); hoja "Versión por día" y "Revisiones".
+- Igual al Gold: test con PostgreSQL de prueba (rel 1e-12) y con datos reales 2022-12 (dif 0).
+- Ejecutable: PyInstaller onedir, 92 MB, `empaquetar/construir_consulta.ps1`. Probado el `.exe`
+  contra una base de demostración local (cmg_demo, 2022-11/12): ventana, búsqueda y `--prueba`
+  (2 Excel en 17,5 s). No se copió a la carpeta compartida.
+- 732 tests (23+ necesitan `CMG_PRUEBA_PG`).
+
 ### 2026-10-14 — Sesión 9e: el reporte de los 1.774 ZIP (error A19)
 - El usuario descargó todo (1.774 ZIP, 2024-08-01..2026-10-12, Bronze en la red) y el menú dejó
   `deriva_20261013_220833`: 318 críticos. Causas: subcarpetas dentro del ZIP, `_15_NUEVO.csv` y,

@@ -288,6 +288,22 @@ y `PPA_` en `ppa-pipeline`. Si una entrada aplica solo a un proyecto, decirlo ex
   otro dato: al aparecer columnas nuevas *junto* a la conocida, comparar valores contra el
   documento anterior y el posterior antes de decidir cuál leer.
 
+### A20. Silver aceptó filas sin clave, y la carga a PostgreSQL se cayó con un TypeError
+- **Error (2026-10-14):** la ingesta escribía en Silver cualquier fila del CSV, aunque viniera
+  sin barra, fecha ni hora, y `publicar-sql` daba por hecho que todas tenían barra.
+- **Evidencia:** `publicar-sql` cayó con `TypeError: '<' not supported between instances of
+  'NoneType' and 'str'` al ordenar las barras de 2025-01. Silver 2025-01 tenía 261.755 filas
+  totalmente vacías: cinco `def` (10, 13, 14, 15 y 16 de enero) traen el CSV rellenado hasta
+  200.000 líneas con `;;;;;;;;;;` (52.351 cada uno). Los datos reales estaban completos
+  (1.538 barras × 96 cuartos, igual que los días vecinos). Es el único mes afectado.
+- **Corrección:** la lectura descarta las líneas sin barra, fecha ni hora (una fila con datos y
+  sin barra NO se descarta: se reporta); el reporte lo avisa como `lineas_vacias` (info, con el
+  ZIP); `publicar-sql` revisa que el mes no tenga filas sin clave antes de tocar la base y, si
+  las hay, se detiene con un mensaje que dice cómo rehacerlo; `ingerir-pagina --mes AAAA-MM`
+  rehace un mes puntual.
+- **Lección:** cada capa valida lo que **recibe**, no solo lo que produce: la clave de una fila
+  (barra, fecha, hora, minuto) nunca puede ser nula al escribir Silver ni al leerlo para publicar.
+
 ---
 
 ## B. Procesamiento de datos (del código que se está portando)

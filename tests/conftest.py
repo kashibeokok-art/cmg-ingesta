@@ -125,6 +125,7 @@ def zip_cen() -> ArmarZipCen:
         v2: tuple[float, float] | None = None,
         v2_al_reves: bool = False,
         sufijo: str = "",
+        relleno: int = 0,
     ) -> Path:
         """Variantes reales del Coordinador:
 
@@ -134,6 +135,7 @@ def zip_cen() -> ArmarZipCen:
           quedan con `pre`/`definitivo` (el v1). Con `v2_al_reves`, el orden de
           `pre-v2_250228`: `PRE v2, DEF v2, PRE, DEF`, donde lo revisado va al final.
         - `sufijo="_NUEVO"`: `CmgBarrasComparativo_..._15_NUEVO.csv`.
+        - `relleno`: lineas vacias `;;;;;;;;;;` al final (def_250110 trae 52.351).
         """
         f = dia.strftime("%Y%m%d")
         rango = horas if horas is not None else list(range(24))
@@ -153,6 +155,7 @@ def zip_cen() -> ArmarZipCen:
             for h in rango:
                 for m in (0, 15, 30, 45):
                     lineas.append(f"{f};{h};{m};{barra};141;X;1.0;{';'.join(valores)};915.95;NO")
+        lineas += [";" * (len(cab) - 1)] * relleno
         miembros = {
             f"CmgBarrasComparativo_{f}_{f}_15{sufijo}.csv": "\n".join(lineas),
             f"PromediosBarras{'' if viejo else '_'}{f}_{f}_R.csv": ";".join(

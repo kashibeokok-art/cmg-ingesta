@@ -690,6 +690,15 @@ def _leer_csv_de_zip(zf: zipfile.ZipFile, miembro: str) -> Iterator[list[str]]:
     return csv.reader(flujo, delimiter=";")
 
 
+def _sin_vacias(lector: Iterator[list[str]], vacias: list[int]) -> Iterator[list[str]]:
+    """Las filas con algo escrito; cuenta en `vacias[0]` las que son solo `;;;;`."""
+    for fila in lector:
+        if any(c.strip() for c in fila):
+            yield fila
+        else:
+            vacias[0] += 1
+
+
 def _filas_comparativo(
     lector: Iterator[list[str]], i_fecha: int, i_hora: int, i_barra: int
 ) -> Iterator[tuple[str, int, str]]:
@@ -760,10 +769,24 @@ def _revisar_zip(ruta: Path, dia: date) -> list[Hallazgo]:
                 hallazgos += h_cab
                 if any(h["severidad"] == "critico" for h in h_cab):
                     continue
+                vacias = [0]
                 filas = _filas_comparativo(
-                    lector, cab.index("FECHA"), cab.index("HORA"), cab.index("BARRA")
+                    _sin_vacias(lector, vacias),
+                    cab.index("FECHA"),
+                    cab.index("HORA"),
+                    cab.index("BARRA"),
                 )
                 hallazgos += revisar_forma_dia(dia, filas)
+                if vacias[0]:
+                    hallazgos.append(
+                        _h(
+                            "info",
+                            "lineas_vacias",
+                            f"{miembro}: trae lineas vacias (solo ';'), como un export de Excel.",
+                            f"{vacias[0]:,} lineas",
+                            "Nada: la ingesta las descarta.",
+                        )
+                    )
     return hallazgos
 
 

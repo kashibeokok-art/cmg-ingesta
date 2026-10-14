@@ -2,6 +2,7 @@
 
 # Credenciales y configuracion local
 .env
+conexion.ini
 credenciales.py
 
 # Datos
@@ -39,3 +40,8 @@ Thumbs.db
 CV*.pdf
 *.pdf
 docs/entrevista/
+
+# Ejecutable de la app de consulta (PyInstaller)
+empaquetar/build/
+empaquetar/dist/
+*.spec
