@@ -66,11 +66,11 @@ class Contexto:
 
     @property
     def silver(self) -> Path:
-        return conexion.ruta_silver(self.cfg.data_dir)
+        return conexion.ruta_silver(self.cfg.data_dir, self.cfg.silver_dir)
 
     @property
     def bronze_cen(self) -> Path:
-        return conexion.ruta_bronze_cen(self.cfg.data_dir)
+        return conexion.ruta_bronze_cen(self.cfg.data_dir, self.cfg.bronze_dir)
 
     @property
     def descargas(self) -> Path:
@@ -127,7 +127,12 @@ def estado_base(ctx: Contexto) -> list[str]:
 def _cobertura(
     ctx: Contexto, con: duckdb.DuckDBPyConnection, manifiesto: dict[str, cen.EntradaManifiesto]
 ) -> cobertura.Cobertura:
-    return cobertura.calcular(cobertura.dias_en_base(con, ctx.silver), manifiesto, hoy=ctx.hoy())
+    return cobertura.calcular(
+        cobertura.dias_en_base(con, ctx.silver),
+        manifiesto,
+        hoy=ctx.hoy(),
+        desde=cobertura.inicio(ctx.cfg.desde),
+    )
 
 
 def _rango_y_barras(ctx: Contexto, con: duckdb.DuckDBPyConnection) -> tuple[Mes, Mes, list[str]]:
@@ -421,6 +426,7 @@ def actualizar(ctx: Contexto) -> None:
             ctx.silver,
             conexion.ruta_staging(ctx.cfg.data_dir),
             avisar=c.decir,
+            conservar_zip=ctx.cfg.conservar_zip,
         )
     finally:
         con.close()

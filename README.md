@@ -101,6 +101,28 @@ uv run cmg ingerir-pagina
 uv run cmg vigilar-fuente
 ```
 
+**Bronze o Silver en otra carpeta** (por ejemplo en la red): `CMGI_BRONZE_DIR` y
+`CMGI_SILVER_DIR` en el `.env` son las carpetas finales (Bronze: los ZIP y `manifiesto.json`;
+Silver: `anio=…/mes=…`). Tienen que existir: si la red no está conectada o la ruta está mal, el
+comando se detiene sin crear nada. Los temporales siguen en `CMGI_DATA_DIR`. Para mudar lo que ya
+hay, copiar el contenido de `data\bronze\cen_cmg` y de `data\silver\cmg` a esas carpetas,
+comprobar con `uv run cmg estado` y recién ahí borrar la copia local.
+
+**Equipo con poco disco** (`CMGI_CONSERVAR_ZIP=false` en el `.env`): cada ZIP (~11 MB) que ya
+quedó en Silver se borra y queda un testigo `<nombre>.zip.testigo.json` de ~300 bytes con su
+sha256. El manifiesto no cambia, así que la descarga no lo vuelve a bajar. Si después llega una
+revisión de un día del mismo mes, los otros días se toman del Silver que ya estaba. Los ZIP con
+problemas (día omitido o sin clasificar) no se borran. Lo que se pierde: un `--forzar` ya no
+vuelve a leer esos ZIP, los toma de Silver tal cual. Para no llenar el disco, descargar e ingerir
+por tramos (por ejemplo, de a un mes; ~700 MB de ZIP por mes con pre y def).
+
+La página publicó en dos formatos: hasta el 2024-10-08 (operación 2024-08 y 2024-09) las
+columnas se llaman `CMgP`/`CMgR` y vienen en mills/kWh (= USD/MWh); después, `CMG_REAL_PRE`/
+`CMG_REAL_DEF`. El programa lee los dos (verificado con ZIP reales, error A18). Algunas revisiones
+(v2) de 2025-02/03 traen dos columnas para el mismo valor (`CMG_REAL_DEF` y `CMG_REAL_DEF v2`): la
+primera repite el v1 y se lee **la última** del encabezado, que es la revisada (error A19). Cada
+hallazgo del reporte dice en qué ZIP está, y el reporte agrupa el mismo problema en una tabla.
+
 La descarga es **reanudable**: si se corta (red, Ctrl+C), lo ya bajado queda registrado y
 basta volver a correr el mismo comando. Las fallas pasajeras del sitio (429, 5xx) se
 reintentan solas; cada ZIP se verifica antes de registrarse.
@@ -110,6 +132,50 @@ reintentan solas; cada ZIP se verifica antes de registrarse.
 con sus documentos conocidos, el índice de años y el sitemap. Si algo estructural cambió, se
 detiene **sin bajar nada** y deja el detalle en `data/alertas/`. Para descargar igual:
 `cmg descargar-cen ... --omitir-chequeo`.
+
+### Publicar en PostgreSQL (base `cmg_cen`, para la API)
+
+Silver y Gold se copian a PostgreSQL para que una API en el servidor responda las consultas: quien quiera el dato fino pide Silver; quien quiera el número listo para cotizar, Gold. La base
+guarda además **qué documento del Coordinador hay en cada día** y el **historial de
+revisiones**: cada vez que un día cambia de versión (preliminar → definitivo, definitivo → v2),
+cuántos cuartos de hora cambiaron y cuánto.
+
+Una vez, en el servidor (como administrador de PostgreSQL):
+
+```powershell
+psql -h 192.168.0.85 -p 5433 -U postgres -d cmg_cen -f sql/cmg_cen.sql
+```
+
+y ponerle clave a los dos usuarios que crea el script: `cmg_carga` (escribe, lo usa
+`publicar-sql`) y `cmg_lectura` (solo lee, lo usa la API). En el `.env` del equipo que carga:
+`CMGI_PG_URL=postgresql://cmg_carga:CLAVE@192.168.0.85:5433/cmg_cen`.
+
+Después, cada vez que Silver cambie:
+
+```powershell
+uv run cmg publicar-sql
+```
+
+Sube solo los meses que cambiaron, un mes completo a la vez: mientras carga, la API sigue
+viendo la versión anterior. Cada mes muestra su avance (`[3/22] 2023-03: ...`).
+
+Para no subir todo el histórico, `CMGI_DESDE=2023-01` en el `.env`: solo se sube de ese mes en
+adelante (y `estado` no cuenta como faltante nada anterior). Si ya había meses anteriores en la base, el programa avisa y no los toca;
+`uv run cmg publicar-sql --quitar-anteriores` los borra (cuartos, Gold, días, documentos,
+revisiones y las barras que quedan sin datos), todo en una transacción, y luego sube lo que falte.
+
+Medido con datos reales: ~1 minuto y ~390 MB por mes; la consulta de
+una barra en un periodo, ~12 ms.
+
+| Tabla o vista | Capa | Qué tiene |
+|---|---|---|
+| `cmg.cmg_15min` (vista) | Silver | Cada barra cada 15 minutos: barra, fecha, hora, minuto, bloque, CMg, origen |
+| `cmg.cmg_mensual` (vista) | Gold | Por barra y mes: A, B, C, Solar, NoSolar, Total, y cuántos días son preliminares |
+| `cmg.cmg_mensual_bloque` (vista) | Gold | Por barra, mes y bloque: promedio, desvío, mínimo, máximo, cuartos en cero |
+| `cmg.dia` | — | Qué hay cargado hoy en cada día: origen y documento del CEN |
+| `cmg.revision` | — | Historial de días que cambiaron de versión, con cuánto cambió el CMg |
+| `cmg.documento` | — | Todos los ZIP del CEN que se descargaron, se usen o no |
+| `cmg.carga_mes` | — | Qué versión de cada mes de Silver está cargada |
 
 ### Archivos que se editan a mano
 
@@ -193,7 +259,7 @@ Gold (negocio).
 ## Desarrollar
 
 ```powershell
-uv run pytest          # 552 tests, ninguno toca la red
+uv run pytest          # 675 tests, ninguno toca la red (23 necesitan un PostgreSQL de pruebas: CMG_PRUEBA_PG)
 uv run mypy            # tipado estricto
 uv run ruff check .    # linter
 uv run ruff format .   # formateo

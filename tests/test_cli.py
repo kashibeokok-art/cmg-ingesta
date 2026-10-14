@@ -75,6 +75,18 @@ def test_estado_muestra_los_dias_y_meses_que_faltan(
     assert "meses sin ningun dato" in r.stdout  # 2021-01 .. 2024-05 y 2024-08
 
 
+def test_estado_con_cmgi_desde_no_reclama_lo_anterior(
+    con_base: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Silver desde 2024-06 a proposito: 2021-01..2024-05 no son faltantes."""
+    monkeypatch.setattr(cli, "_hoy", lambda: date(2024, 8, 4))
+    monkeypatch.setenv("CMGI_DESDE", "2024-06")
+    r = runner.invoke(cli.app, ["estado"])
+    assert r.exit_code == cli.SALIDA_OK
+    assert "2021" not in r.stdout
+    assert "2024-06-02 a 2024-06-30" in r.stdout  # lo que falta desde 2024-06 si se avisa
+
+
 # ----------------------------------------------------------------- barras
 
 
@@ -573,3 +585,68 @@ def test_una_cmgi_desconocida_en_el_sistema_termina_con_mensaje(
     assert r.exit_code == cli.SALIDA_ERROR
     assert "CMGI_DAT_DIR" in r.stderr
     assert "Traceback" not in r.output
+
+
+def test_publicar_sql_quitar_anteriores_sin_desde_es_error_de_uso(entorno: Path) -> None:
+    """Borrar meses sin decir desde cuando seria adivinar: exit 2, sin tocar la base."""
+    r = runner.invoke(cli.app, ["publicar-sql", "--quitar-anteriores"])
+    assert r.exit_code == cli.SALIDA_USO
+    assert "CMGI_DESDE" in r.output
+
+
+# ------------------------------------------- Silver y Bronze en otra carpeta (red)
+
+
+def test_bronze_y_silver_en_otra_carpeta(
+    entorno: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sin_red: Callable[..., Sesion],
+    zip_cen: ArmarZipCen,
+) -> None:
+    """Todo lo de Bronze y Silver va a las carpetas elegidas; nada a data/."""
+    red = entorno / "red"
+    (red / "bronze").mkdir(parents=True)
+    (red / "silver").mkdir()
+    (entorno / "data").mkdir(exist_ok=True)
+    monkeypatch.setenv("CMGI_BRONZE_DIR", str(red / "bronze"))
+    monkeypatch.setenv("CMGI_SILVER_DIR", str(red / "silver"))
+    dia = date(2026, 1, 14)
+    nombre = "Antecedentes_CMG_Real_def_260114.zip"
+    contenido = zip_cen(entorno / "tmp.zip", dia).read_bytes()
+    sin_red({cen.url_dia(dia): pagina(UP + nombre), UP + nombre: contenido})
+
+    r = runner.invoke(cli.app, ["descargar-cen", "--desde", "2026-01-14", "--hasta", "2026-01-14"])
+    assert (red / "bronze" / nombre).exists(), r.output
+    r = runner.invoke(cli.app, ["ingerir-pagina"])
+    assert r.exit_code == cli.SALIDA_OK, r.output
+    r = runner.invoke(cli.app, ["estado"])
+    assert "2026-01" in r.stdout
+
+    assert list((red / "silver").glob("anio=2026/mes=1/*.parquet"))
+    assert not (entorno / "data" / "bronze").exists()
+    assert not (entorno / "data" / "silver").exists()
+
+
+@pytest.mark.parametrize(
+    ("variable", "comando"),
+    [
+        ("CMGI_BRONZE_DIR", ["descargar-cen", "--desde", "2026-01-14"]),
+        ("CMGI_SILVER_DIR", ["descargar-cen", "--desde", "2026-01-14"]),
+        ("CMGI_SILVER_DIR", ["estado"]),
+        ("CMGI_BRONZE_DIR", ["estado"]),  # con base: estado tambien lee el manifiesto
+        ("CMGI_SILVER_DIR", ["ingerir-pagina"]),
+    ],
+)
+def test_una_carpeta_elegida_que_no_existe_detiene_sin_crearla(
+    con_base: Path, monkeypatch: pytest.MonkeyPatch, variable: str, comando: list[str]
+) -> None:
+    """La red desconectada o una ruta mal escrita: no se crea una carpeta equivocada."""
+    entorno = con_base.parents[2]
+    falta = entorno / "red_desconectada" / "cmg"
+    monkeypatch.setenv(variable, str(falta))
+
+    r = runner.invoke(cli.app, comando)
+
+    assert r.exit_code == cli.SALIDA_ERROR
+    assert variable in r.stderr
+    assert not falta.exists()

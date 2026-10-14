@@ -16,6 +16,7 @@ from cmg_ingesta.domain import esquema
 from cmg_ingesta.extract import coordinador_cmg as cen
 from cmg_ingesta.extract import ingerir_cen, pagina_cen
 from cmg_ingesta.quality import deriva
+from cmg_ingesta.silver import escribir
 
 ArmarZipCen = Callable[..., Path]
 
@@ -189,10 +190,18 @@ def bronze(tmp_path: Path, zip_cen: ArmarZipCen) -> Callable[..., Path]:
 
 
 def correr(
-    con: duckdb.DuckDBPyConnection, tmp_path: Path, forzar: bool = False
+    con: duckdb.DuckDBPyConnection,
+    tmp_path: Path,
+    forzar: bool = False,
+    conservar_zip: bool = True,
 ) -> tuple[list[ingerir_cen.FilaReporteCen], list[deriva.Hallazgo]]:
     reporte, hallazgos = ingerir_cen.ingerir_pagina(
-        con, tmp_path / "bronze", tmp_path / "silver", tmp_path / "staging", forzar=forzar
+        con,
+        tmp_path / "bronze",
+        tmp_path / "silver",
+        tmp_path / "staging",
+        forzar=forzar,
+        conservar_zip=conservar_zip,
     )
     return reporte, hallazgos
 
@@ -370,3 +379,358 @@ def test_elegir_por_dia_desempata_por_fecha_de_publicacion() -> None:
     a["nombre"], b["nombre"] = "a.zip", "b.zip"
     a["fecha_publicacion"], b["fecha_publicacion"] = "2026-08-17", "2026-08-25"
     assert pagina_cen.elegir_por_dia({"a": a, "b": b})[d]["nombre"] == "b.zip"
+
+
+# ============================================== testigo en lugar del ZIP (poco disco)
+
+
+def liviano(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, forzar: bool = False
+) -> tuple[list[ingerir_cen.FilaReporteCen], list[deriva.Hallazgo]]:
+    """Como en un equipo con CMGI_CONSERVAR_ZIP=false."""
+    return correr(con, tmp_path, forzar=forzar, conservar_zip=False)
+
+
+def archivos(tmp_path: Path) -> list[str]:
+    return sorted(r.name for r in (tmp_path / "bronze").iterdir() if r.suffix == ".zip")
+
+
+def ingerido_en(con: duckdb.DuckDBPyConnection, tmp_path: Path, dia: date) -> object:
+    patron = str(tmp_path / "silver" / "**" / "*.parquet")
+    fila = con.execute(
+        f"SELECT min(ingerido_en) FROM read_parquet('{patron}') WHERE fecha = DATE '{dia}'"
+    ).fetchone()
+    assert fila is not None
+    return fila[0]
+
+
+def test_por_defecto_los_zip_se_conservan(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    zip_ = bronze(date(2026, 6, 15))
+    correr(con, tmp_path)
+    assert zip_.exists()
+    assert not ingerir_cen.ruta_testigo(tmp_path / "bronze", zip_.name).exists()
+
+
+def test_sin_conservar_cada_zip_queda_como_testigo(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    zip_ = bronze(date(2026, 6, 15))
+    sha = cen.sha256_bytes(zip_.read_bytes())
+
+    liviano(con, tmp_path)
+
+    assert not zip_.exists()
+    testigo = ingerir_cen.leer_testigo(tmp_path / "bronze", zip_.name)
+    assert testigo is not None
+    assert (testigo["sha256"], testigo["uso"], testigo["tipo"]) == (sha, "silver", "def")
+    assert ingerir_cen.ruta_testigo(tmp_path / "bronze", zip_.name).stat().st_size < 1000
+    assert silver(con, tmp_path) == [(date(2026, 6, 15), esquema.ORIGEN_PAGINA_DEF, 50.0, 192)]
+    # el manifiesto no cambia: la descarga sigue sabiendo que ese archivo ya se bajo
+    assert zip_.name in cen.leer_manifiesto(tmp_path / "bronze")
+
+
+def test_con_testigos_la_segunda_corrida_no_hace_nada(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    bronze(date(2026, 6, 15))
+    liviano(con, tmp_path)
+    reporte, _ = liviano(con, tmp_path)
+    assert reporte == []
+
+
+def test_una_revision_de_otro_dia_reusa_el_silver_de_los_dias_con_testigo(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    """El caso diario en un equipo con poco disco: llega el def de un dia del mes."""
+    d15, d16 = date(2026, 6, 15), date(2026, 6, 16)
+    bronze(d15, definitivo=50.0)
+    bronze(d16, "pre", pre=40.0)
+    liviano(con, tmp_path)
+    antes = ingerido_en(con, tmp_path, d15)
+    assert archivos(tmp_path) == []  # solo testigos
+
+    bronze(d16, "def", definitivo=55.0)
+    reporte, _ = liviano(con, tmp_path)
+
+    assert reporte[0]["dias"] == 2
+    assert reporte[0]["desde_silver"] == 1
+    assert not ingerir_cen.hay_problemas(reporte)
+    assert silver(con, tmp_path) == [
+        (d15, esquema.ORIGEN_PAGINA_DEF, 50.0, 192),
+        (d16, esquema.ORIGEN_PAGINA_DEF, 55.0, 192),
+    ]
+    assert ingerido_en(con, tmp_path, d15) == antes  # el dia copiado conserva su linaje
+    assert archivos(tmp_path) == []
+
+
+def test_la_version_superada_tambien_queda_como_testigo(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    d = date(2026, 6, 15)
+    pre = bronze(d, "pre")
+    defi = bronze(d, "def")
+    liviano(con, tmp_path)
+
+    usos = {
+        z.name: t["uso"]
+        for z in (pre, defi)
+        if (t := ingerir_cen.leer_testigo(tmp_path / "bronze", z.name)) is not None
+    }
+    assert usos == {pre.name: "superado", defi.name: "silver"}
+    assert archivos(tmp_path) == []
+
+
+def test_un_dia_omitido_conserva_su_zip(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    """Hace falta para reintentar cuando el catalogo este corregido."""
+    bueno = bronze(date(2026, 6, 15))
+    malo = bronze(date(2026, 6, 16), horas=list(range(1, 25)))
+    liviano(con, tmp_path)
+    assert archivos(tmp_path) == [malo.name]
+    assert not bueno.exists()
+
+
+def test_un_dia_sin_clasificar_conserva_sus_zip(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    bronze(date(2026, 6, 15))
+    del_16 = bronze(date(2026, 6, 16))
+    m = cen.leer_manifiesto(tmp_path / "bronze")
+    raro = entrada(date(2026, 6, 16), "desconocido")
+    m[raro["nombre"]] = raro
+    cen.guardar_manifiesto(tmp_path / "bronze", m)
+
+    liviano(con, tmp_path)
+
+    assert archivos(tmp_path) == [del_16.name]
+
+
+def test_forzar_con_testigos_rehace_el_mes_desde_silver(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    bronze(date(2026, 6, 15))
+    bronze(date(2026, 6, 16), "pre")
+    liviano(con, tmp_path)
+    antes = silver(con, tmp_path)
+
+    reporte, _ = liviano(con, tmp_path, forzar=True)
+
+    assert reporte[0]["desde_silver"] == 2
+    assert silver(con, tmp_path) == antes
+    assert not ingerir_cen.hay_problemas(reporte)
+
+
+def test_testigo_sin_el_dia_en_silver_se_omite_y_no_borra_nada(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    """Si Silver se perdio, el testigo no basta: se avisa que hay que volver a bajarlo."""
+    d15, d16 = date(2026, 6, 15), date(2026, 6, 16)
+    bronze(d15)
+    liviano(con, tmp_path)
+    archivo = escribir.ruta_particion(tmp_path / "silver", 2026, 6) / escribir.NOMBRE_ARCHIVO
+    archivo.unlink()
+    bronze(d16)
+
+    reporte, _ = liviano(con, tmp_path)
+
+    assert any(str(d15) in o and "volver a descargarlo" in o for o in reporte[0]["omitidos"])
+    assert ingerir_cen.hay_problemas(reporte)
+    assert [x[0] for x in silver(con, tmp_path)] == [d16]
+
+
+def test_un_zip_distinto_del_manifiesto_no_se_borra(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    zip_ = bronze(date(2026, 6, 15))
+    m = cen.leer_manifiesto(tmp_path / "bronze")
+    e = m[zip_.name]
+    e["sha256"] = "0" * 64
+
+    assert ingerir_cen.dejar_testigo(tmp_path / "bronze", e, "silver") is False
+    assert zip_.exists()
+    assert not ingerir_cen.ruta_testigo(tmp_path / "bronze", zip_.name).exists()
+
+
+def test_un_testigo_ilegible_no_cuenta(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    zip_ = bronze(date(2026, 6, 15))
+    liviano(con, tmp_path)
+    ingerir_cen.ruta_testigo(tmp_path / "bronze", zip_.name).write_text("{roto", encoding="utf-8")
+
+    reporte, _ = liviano(con, tmp_path, forzar=True)
+
+    assert "no en disco" in reporte[0]["omitidos"][0]
+
+
+# ============================================ formato 2024-08/09 (error A18)
+
+
+def test_def_de_2024_lee_cmgr(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, zip_cen: ArmarZipCen
+) -> None:
+    filas = leer_dia(
+        con, tmp_path, zip_cen, date(2024, 8, 14), "def", pre=40.0, definitivo=50.0, formato="2024"
+    )
+    assert set(columnas(filas, "cmg_usd_mwh")) == {50.0}
+    assert len(filas) == 2 * 96
+
+
+def test_pre_de_2024_lee_cmgp(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, zip_cen: ArmarZipCen
+) -> None:
+    filas = leer_dia(
+        con, tmp_path, zip_cen, date(2024, 8, 14), "pre", pre=40.0, definitivo=0.0, formato="2024"
+    )
+    assert set(columnas(filas, "cmg_usd_mwh")) == {40.0}
+
+
+def test_un_csv_sin_ninguna_columna_conocida_falla_claro(tmp_path: Path) -> None:
+    csv = tmp_path / "x.csv"
+    csv.write_text("FECHA;HORA;MINUTO;BARRA;OTRA\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="CMgR"):
+        pagina_cen.columna_valor(csv, "def")
+
+
+def test_un_mes_con_los_dos_formatos_entra_completo(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    """Septiembre 2024: hasta el 29 llegan ZIP viejos y desde el 30 nuevos."""
+    bronze(date(2024, 9, 29), definitivo=50.0, formato="2024")
+    bronze(date(2024, 9, 30), definitivo=55.0)
+    reporte, hallazgos = correr(con, tmp_path)
+    assert not ingerir_cen.hay_problemas(reporte)
+    assert [h for h in hallazgos if h["severidad"] == "critico"] == []
+    assert silver(con, tmp_path) == [
+        (date(2024, 9, 29), esquema.ORIGEN_PAGINA_DEF, 50.0, 192),
+        (date(2024, 9, 30), esquema.ORIGEN_PAGINA_DEF, 55.0, 192),
+    ]
+
+
+def test_la_ingesta_avisa_cada_dia_que_lee(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    """Un mes tarda ~30 s: sin avisos por dia, parece pegado."""
+    bronze(date(2026, 6, 15))
+    bronze(date(2026, 6, 16), horas=list(range(1, 25)))
+    avisos: list[str] = []
+    ingerir_cen.ingerir_pagina(
+        con, tmp_path / "bronze", tmp_path / "silver", tmp_path / "staging", avisar=avisos.append
+    )
+    assert "2026-06: 2 dia(s) por leer" in avisos
+    assert "  [1/2] 2026-06-15 def" in avisos
+    assert "  [2/2] 2026-06-16 def  [!] hallazgo critico, no entra" in avisos
+    assert avisos.index("2026-06: escribiendo Silver...") > avisos.index("  [1/2] 2026-06-15 def")
+
+
+def test_un_zip_trabado_por_windows_se_queda_y_no_corta_la_ingesta(
+    con: duckdb.DuckDBPyConnection,
+    tmp_path: Path,
+    bronze: Callable[..., Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """El antivirus puede tener abierto el ZIP recien leido: no se borra, y no es error."""
+    zip_ = bronze(date(2026, 6, 15))
+
+    def trabado(self: Path, missing_ok: bool = False) -> None:
+        raise PermissionError("en uso por otro proceso")
+
+    monkeypatch.setattr(Path, "unlink", trabado)
+    monkeypatch.setattr("cmg_ingesta.extract.ingerir_cen.time.sleep", lambda _s: None)
+    reporte, _ = liviano(con, tmp_path)
+    monkeypatch.undo()
+
+    assert zip_.exists()
+    assert not ingerir_cen.hay_problemas(reporte)
+    assert silver(con, tmp_path) == [(date(2026, 6, 15), esquema.ORIGEN_PAGINA_DEF, 50.0, 192)]
+
+
+# ======================================= variantes reales de 2025-02..2026-09 (error A19)
+
+
+def test_un_zip_con_carpeta_adentro_se_lee_igual(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    bronze(date(2025, 3, 1), definitivo=50.0, carpeta="Antecedentes_CMG_Real_def")
+    reporte, hallazgos = correr(con, tmp_path)
+    assert not ingerir_cen.hay_problemas(reporte)
+    assert [h for h in hallazgos if h["severidad"] != "info"] == []
+    assert silver(con, tmp_path) == [(date(2025, 3, 1), esquema.ORIGEN_PAGINA_DEF, 50.0, 192)]
+
+
+def test_el_comparativo_nuevo_se_lee_igual(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    bronze(date(2025, 2, 9), "pre", pre=40.0, sufijo="_NUEVO")
+    reporte, _ = correr(con, tmp_path)
+    assert not ingerir_cen.hay_problemas(reporte)
+    assert silver(con, tmp_path) == [(date(2025, 2, 9), esquema.ORIGEN_PAGINA_PRE, 40.0, 192)]
+
+
+@pytest.mark.parametrize("tipo", ["def", "pre"])
+def test_una_revision_con_columnas_v2_usa_la_revisada(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, zip_cen: ArmarZipCen, tipo: str
+) -> None:
+    """def_v2_250201: CMG_REAL_DEF repite el v1; CMG_REAL_DEF v2 trae lo revisado."""
+    filas = leer_dia(
+        con, tmp_path, zip_cen, date(2025, 2, 1), tipo, pre=40.0, definitivo=50.0, v2=(41.0, 51.0)
+    )
+    assert set(columnas(filas, "cmg_usd_mwh")) == {51.0 if tipo == "def" else 41.0}
+
+
+def test_una_revision_con_las_columnas_al_reves_usa_la_ultima(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, zip_cen: ArmarZipCen
+) -> None:
+    """pre-v2_250228: `PRE v2, DEF v2, PRE, DEF`; lo revisado es la ultima, SIN "v2"."""
+    filas = leer_dia(
+        con,
+        tmp_path,
+        zip_cen,
+        date(2025, 2, 8),
+        "pre",
+        pre=40.0,
+        definitivo=50.0,
+        v2=(41.0, 51.0),
+        v2_al_reves=True,
+    )
+    assert set(columnas(filas, "cmg_usd_mwh")) == {41.0}
+
+
+def test_las_columnas_v2_no_se_avisan_como_nuevas(tmp_path: Path, zip_cen: ArmarZipCen) -> None:
+    d = date(2025, 2, 1)
+    ruta = zip_cen(tmp_path / "a.zip", d, v2=(41.0, 51.0))
+    assert deriva.revisar_zip(ruta, d) == []
+
+
+def test_cada_hallazgo_de_un_zip_dice_cual_es(tmp_path: Path, zip_cen: ArmarZipCen) -> None:
+    """Pedido del usuario: para poder ir a buscar el ZIP con el problema."""
+    d = date(2026, 6, 16)
+    ruta = zip_cen(tmp_path / "Antecedentes_CMG_Real_def_260616.zip", d, horas=list(range(1, 25)))
+    hallazgos = deriva.revisar_zip(ruta, d)
+    assert hallazgos
+    assert {h.get("archivo") for h in hallazgos} == {"Antecedentes_CMG_Real_def_260616.zip"}
+
+
+def test_un_dia_omitido_dice_que_zip_fue(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    malo = bronze(date(2026, 6, 16), horas=list(range(1, 25)))
+    reporte, _ = correr(con, tmp_path)
+    assert malo.name in reporte[0]["omitidos"][0]
+
+
+def test_cambiar_las_reglas_reingiere_los_meses(
+    con: duckdb.DuckDBPyConnection,
+    tmp_path: Path,
+    bronze: Callable[..., Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Silver depende del Bronze Y de como se lee: al corregir una regla, se rehace."""
+    bronze(date(2026, 6, 15))
+    correr(con, tmp_path)
+    assert correr(con, tmp_path)[0] == []
+    monkeypatch.setattr(ingerir_cen, "REGLAS", "otra")
+    assert len(correr(con, tmp_path)[0]) == 1

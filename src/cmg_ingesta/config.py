@@ -5,9 +5,10 @@ carpeta desde donde se ejecuta el comando. Antes, `CMGI_DATA_DIR=data` significa
 "la carpeta data de donde estes parado": corriendo `cmg` desde la carpeta Scripts
 buscaba Scripts/data y decia que la base estaba vacia, y ni siquiera leia el `.env`.
 
-Solo hay un campo porque es lo unico que el programa lee. `log_level` y
-`cen_api_key` se quitaron el 2026-10-13: nadie los usaba (el programa no usa
-`logging`, y la API del CEN quedo fuera del alcance).
+`data_dir`, `desde` y `conservar_zip` los usan los comandos de datos; `pg_url`, solo
+la publicacion a PostgreSQL.
+`log_level` y `cen_api_key` se quitaron el 2026-10-13: nadie los usaba (el programa
+no usa `logging`, y la API del CEN quedo fuera del alcance).
 
 Variables desconocidas (A17):
 - Una `CMGI_*` que el programa no conoce DETIENE el arranque, venga del `.env` o
@@ -22,8 +23,10 @@ import os
 from collections.abc import Mapping
 from pathlib import Path
 
-from pydantic import field_validator, model_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from cmg_ingesta.domain import periodo
 
 #: La carpeta que tiene `pyproject.toml`: este archivo esta en src/cmg_ingesta/,
 #: dos niveles mas abajo. Funciona porque `uv sync` instala el paquete en modo
@@ -73,6 +76,35 @@ class Settings(BaseSettings):
 
     data_dir: Path = Path("data")
 
+    #: Donde viven Silver y Bronze, si no es bajo data_dir (por ejemplo, una carpeta
+    #: de la red, para un equipo con poco disco). Son las carpetas finales: Silver
+    #: contiene `anio=.../mes=...` y Bronze los ZIP y `manifiesto.json`. Tienen que
+    #: existir; el programa no las crea. Los temporales siguen en data_dir.
+    silver_dir: Path | None = None
+    bronze_dir: Path | None = None
+
+    #: False en un equipo con poco disco: cada ZIP del Coordinador que ya quedo en
+    #: Silver se borra y queda un testigo de ~300 bytes (ver `ingerir_cen`).
+    conservar_zip: bool = True
+
+    #: Conexion a la base cmg_cen (PostgreSQL), solo para `cmg publicar-sql`. Con el
+    #: usuario que ESCRIBE (cmg_carga), nunca con el de la API. Formato:
+    #:     postgresql://cmg_carga:CLAVE@192.168.0.85:5433/cmg_cen
+    #: `SecretStr` evita que la clave aparezca si se imprime la configuracion.
+    pg_url: SecretStr | None = None
+
+    #: Primer mes de la base, AAAA-MM (por ejemplo 2023-01). `estado` y el menu no
+    #: cuentan como faltante nada anterior, y PostgreSQL no sube meses anteriores.
+    #: Sin este ajuste, la base empieza en 2021-01 (el primer mes del Maestro).
+    #: (Hasta el 2026-10-13 se llamaba CMGI_PG_DESDE y solo valia para PostgreSQL.)
+    desde: str | None = None
+
+    @field_validator("silver_dir", "bronze_dir")
+    @classmethod
+    def _anclar_si_hay(cls, ruta: Path | None) -> Path | None:
+        """Igual que data_dir: relativa se cuelga del proyecto. Una ruta de red es absoluta."""
+        return None if ruta is None else cls._anclar_al_proyecto(ruta)
+
     @field_validator("data_dir")
     @classmethod
     def _anclar_al_proyecto(cls, ruta: Path) -> Path:
@@ -82,6 +114,12 @@ class Settings(BaseSettings):
         funcion al leerlo".
         """
         return ruta if ruta.is_absolute() else RAIZ_PROYECTO / ruta
+
+    @field_validator("desde")
+    @classmethod
+    def _mes_valido(cls, texto: str | None) -> str | None:
+        """Mal escrito se detiene al arrancar, no a mitad de una carga."""
+        return None if texto is None else periodo.formatear(periodo.parsear_mes(texto))
 
     @model_validator(mode="after")
     def _sin_cmgi_desconocidas(self) -> "Settings":

@@ -27,6 +27,22 @@ def exigir_carpeta(data_dir: Path) -> None:
         )
 
 
+def exigir_carpeta_propia(ruta: Path, variable: str) -> Path:
+    """Una carpeta elegida en el .env (por ejemplo en la red) tiene que existir.
+
+    Igual que `exigir_carpeta`: NO se crea. Si la red no esta conectada o la ruta
+    esta mal escrita, crearla en silencio haria que una descarga o una ingesta
+    fuera a parar a una carpeta nueva y equivocada.
+    """
+    if not ruta.is_dir():
+        raise ValueError(
+            f"no se encuentra la carpeta de {variable}: {ruta}. Si esta en la red, revisa "
+            "que el equipo este conectado y que la ruta exista; si esta mal escrita, "
+            "corrigela en el .env. El programa no la crea: si es nueva, creala una vez a mano."
+        )
+    return ruta
+
+
 def abrir(
     data_dir: Path,
     threads: int = 4,
@@ -60,8 +76,10 @@ def abrir(
     return con
 
 
-def ruta_silver(data_dir: Path) -> Path:
-    """Donde vive la capa Silver de CMg."""
+def ruta_silver(data_dir: Path, propia: Path | None = None) -> Path:
+    """Donde vive la capa Silver de CMg: `CMGI_SILVER_DIR` si se eligio, si no bajo data_dir."""
+    if propia is not None:
+        return exigir_carpeta_propia(propia, "CMGI_SILVER_DIR")
     return data_dir / "silver" / "cmg"
 
 
@@ -75,8 +93,10 @@ def ruta_bronze(data_dir: Path) -> Path:
     return data_dir / "bronze"
 
 
-def ruta_bronze_cen(data_dir: Path) -> Path:
-    """Los ZIP del Coordinador y su manifiesto, tal como se descargaron."""
+def ruta_bronze_cen(data_dir: Path, propia: Path | None = None) -> Path:
+    """Los ZIP del Coordinador y su manifiesto: `CMGI_BRONZE_DIR` si se eligio."""
+    if propia is not None:
+        return exigir_carpeta_propia(propia, "CMGI_BRONZE_DIR")
     return ruta_bronze(data_dir) / "cen_cmg"
 
 

@@ -23,9 +23,61 @@ def test_valores_por_defecto() -> None:
     assert Settings().data_dir == RAIZ_PROYECTO / "data"
 
 
-def test_el_unico_campo_es_data_dir() -> None:
-    """`log_level` y `cen_api_key` se quitaron porque nadie los leia (2026-10-13)."""
-    assert list(Settings.model_fields) == ["data_dir"]
+def test_los_campos_son_data_dir_y_los_de_postgres() -> None:
+    """`log_level` y `cen_api_key` se quitaron porque nadie los leia (2026-10-13);
+    `pg_url` y `desde` se agregaron para `cmg publicar-sql`; `conservar_zip`, para
+    equipos con poco disco."""
+    assert list(Settings.model_fields) == [
+        "data_dir",
+        "silver_dir",
+        "bronze_dir",
+        "conservar_zip",
+        "pg_url",
+        "desde",
+    ]
+
+
+def test_silver_y_bronze_propios(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    assert (Settings().silver_dir, Settings().bronze_dir) == (None, None)
+    monkeypatch.setenv("CMGI_SILVER_DIR", r"\\SERVIDOR\Datos\silver")
+    monkeypatch.setenv("CMGI_BRONZE_DIR", "otra")
+    cfg = Settings()
+    assert cfg.silver_dir == Path(r"\\SERVIDOR\Datos\silver")  # la ruta de red, tal cual
+    assert cfg.bronze_dir == RAIZ_PROYECTO / "otra"  # relativa: al proyecto, como data_dir
+
+
+def test_conservar_zip_es_verdadero_salvo_que_se_diga(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert Settings().conservar_zip is True
+    monkeypatch.setenv("CMGI_CONSERVAR_ZIP", "false")
+    assert Settings().conservar_zip is False
+
+
+def test_desde_se_normaliza(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CMGI_DESDE", "2023-1")
+    assert Settings().desde == "2023-01"
+    monkeypatch.delenv("CMGI_DESDE")
+    assert Settings().desde is None
+
+
+def test_el_nombre_viejo_pg_desde_avisa(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Se renombro el 2026-10-13: el .env viejo no debe quedar ignorado en silencio (A17)."""
+    monkeypatch.setenv("CMGI_PG_DESDE", "2023-01")
+    with pytest.raises(ValidationError, match="CMGI_PG_DESDE"):
+        Settings()
+
+
+def test_desde_mal_escrito_detiene_el_arranque(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CMGI_DESDE", "2023")
+    with pytest.raises(ValidationError, match="AAAA-MM"):
+        Settings()
+
+
+def test_pg_url_no_se_imprime(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CMGI_PG_URL", "postgresql://cmg_carga:clave-secreta@h:5433/cmg_cen")
+    cfg = Settings()
+    assert "clave-secreta" not in str(cfg)
+    assert cfg.pg_url is not None
+    assert "clave-secreta" in cfg.pg_url.get_secret_value()
 
 
 def test_lee_variable_de_entorno(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

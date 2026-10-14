@@ -239,6 +239,55 @@ y `PPA_` en `ppa-pipeline`. Si una entrada aplica solo a un proyecto, decirlo ex
   que escribe en disco), no solo por el que motivó el cambio. Y una afirmación sobre qué rechaza
   una librería se prueba también con el caso que **no** debería rechazar.
 
+### A18. Un catálogo de formatos verificado con archivos de una sola época
+- **Error (sesiones 1–9, detectado el 2026-10-13):** el catálogo de `quality/deriva.py`
+  (archivos del ZIP, encabezados) se armó con 6 ZIP reales **de 2026** y se documentó como "lo
+  conocido". La fuente se usa desde **2024-08**, y nunca se probó con un ZIP de esa época.
+- **Evidencia (los 332 ZIP que bajó Claudio, 2024-08-01..2025-01-10):** con el catálogo viejo,
+  **269** tenían un hallazgo crítico y no habrían entrado a Silver. (1) Los 121 ZIP de operación
+  2024-08/09 traen otro encabezado: `CMgE/CMgP/CMgR[mills/kWh]` en vez de
+  `CMG_EN_LINEA/CMG_REAL_PRE/CMG_REAL_DEF[USD/MWh]`. (2) En 148 ZIP de 2024-09..2025-01 el archivo
+  es `PromediosBarras2025…` **sin** el `_`, y el patrón lo exigía. (3) Hay un `_E` además de
+  `_R`/`_P`, y un `Fpen_Reales_AAMMDD_MOD_def.xlsx`. Se notó al probar los testigos con ZIP reales:
+  los 4 días de prueba quedaban omitidos.
+- **Verificación del mapeo antes de corregir:** `CMgE` = `CMG_EN_LINEA` y `CMgP` = `CMG_REAL_PRE`
+  con diferencia 0 en los 4 días que tienen un ZIP de cada formato (~145.000 filas cada uno);
+  `CMgR` vale 0 en todo ZIP `pre` y es **igual fila a fila** al `PromediosBarras…_R` (real) del
+  mismo ZIP (2024-08-14 y 2024-09-30), cosa que no pasa con `CMgP` ni con `CMgE`. mills/kWh =
+  USD/MWh, sin conversión.
+- **Corrección:** `ENCABEZADO_COMPARATIVO_2024` y `catalogo_comparativo` en `deriva.py`;
+  `pagina_cen.columna_valor` elige la columna leyendo el encabezado de cada CSV; el patrón de
+  promedios acepta `_?` y `[RPE]`. Tras la corrección, 2 críticos en 332, los dos reales de la
+  fuente y sin efecto (un `pre` publicado en la página de otro día; un `_E`, ya aceptado).
+- **Lección:** un catálogo de "lo conocido" se verifica con una **muestra de todo el período**
+  que el programa va a leer (al menos el primer y el último mes), no solo con lo más reciente. Y
+  antes de un backfill, correr el chequeo sobre **todo** lo descargado y contar críticos.
+
+### A19. Repetir A18 al día siguiente: verificar con lo descargado, no con todo el período
+- **Error (2026-10-13):** al corregir A18 dije "tras la corrección, 2 críticos en 332". Esos 332
+  ZIP llegaban solo a 2025-01-10, y la lección de A18 era justamente usar una muestra de **todo**
+  el período. No lo hice.
+- **Evidencia (reporte `deriva_20261013_220833`, con los 1.774 ZIP hasta 2026-10-12):** 318
+  críticos y 2.267 hallazgos. (1) 109 ZIP traen todo dentro de una **carpeta** del ZIP
+  (`Antecedentes_CMG_Real_def/CmgBarras…csv`) y el patrón comparaba la ruta completa.
+  (2) Dos traen `CmgBarrasComparativo_…_15_NUEVO.csv`. (3) **El más grave, sin aviso:** 49
+  revisiones de 2025-02/03 traen dos juegos de columnas (`CMG_REAL_DEF` y `CMG_REAL_DEF v2`, o
+  `_v2`), y el programa leía `CMG_REAL_DEF`, que **repite el v1** (100 % igual al v1 en los 49).
+  Silver habría guardado el dato anterior a la revisión, marcado como v2.
+- **Verificación antes de corregir:** en los 49, la última columna del par coincide con el
+  documento publicado después (100 % en casi todos). `pre-v2_250228` trae el orden al revés
+  (`PRE v2, DEF v2, PRE, DEF`) y ahí lo revisado es la columna **sin** "v2": la regla correcta es
+  **la última del encabezado**, no la etiqueta.
+- **Corrección:** `pagina_cen.columna_valor` toma la última candidata; `deriva._sin_carpeta` y
+  `(_NUEVO)?`; columnas v2, el `;` final y el formato mixto de 2025-02-26 son conocidos.
+  `ingerir_cen.REGLAS` entra en la huella del mes: cambiar una regla reingiere todo una vez.
+  Sobre los 1.774 ZIP: 0 críticos. Pedido del usuario incorporado: cada hallazgo lleva `archivo`
+  y el reporte agrupa el mismo problema con la lista de archivos.
+- **Lección:** "verificado" se dice **sobre qué conjunto**: "0 críticos en los 332 ZIP hasta
+  2025-01-10" no es "el formato está resuelto". Y una columna con un nombre conocido puede traer
+  otro dato: al aparecer columnas nuevas *junto* a la conocida, comparar valores contra el
+  documento anterior y el posterior antes de decidir cuál leer.
+
 ---
 
 ## B. Procesamiento de datos (del código que se está portando)

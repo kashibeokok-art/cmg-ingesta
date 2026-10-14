@@ -11,6 +11,7 @@ Tres clases de test:
 import io
 import json
 import zipfile
+from collections.abc import Callable
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -18,6 +19,8 @@ import pytest
 
 from cmg_ingesta.extract import coordinador_cmg as cen
 from cmg_ingesta.quality import deriva
+
+ArmarZipCen = Callable[..., Path]
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 
@@ -763,3 +766,108 @@ def test_sincronizar_vigilando_informa_el_avance(tmp_path: Path) -> None:
 
     assert any("2026-01-15" in linea and "1 archivo" in linea for linea in lineas)
     assert any("+ Antecedentes_CMG_Real_def_260115.zip" in linea for linea in lineas)
+
+
+# ============================================ formato 2024-08/09 (error A18)
+
+#: Copiados de ZIP reales del 2026-10-13: el de 2024-08 y uno de 2025-01 sin "_".
+MIEMBROS_2024 = [
+    "Barras_Subsistemas_20240814.xlsx",
+    "CmgBarrasComparativo_20240814_20240814_15.csv",
+    "CMgBarrasMinuto_20240814_20240814.zip",
+    "FPen_Mapeo_Barras.xlsx",
+    "Fpen_Reales_240814_MOD_def.xlsx",
+    "PromediosBarras20240814_20240814_R.csv",
+]
+MIEMBROS_2025_SIN_GUION = [
+    "Barras_Subsistemas_20250110.xlsx",
+    "CmgBarrasComparativo_20250110_20250110_15.csv",
+    "CMgBarrasMinuto_20250110_20250110.zip",
+    "Fpen_20250110.xlsx",
+    "FPen_Mapeo_Barras.xlsx",
+    "PromediosBarras20250110_20250110_P.csv",
+]
+
+
+MIEMBROS_2024_EN_LINEA = [
+    *[m for m in MIEMBROS_2024 if not m.startswith("PromediosBarras")],
+    "PromediosBarras20240911_20240911_E.csv",
+]
+
+
+@pytest.mark.parametrize(
+    "miembros", [MIEMBROS_2024, MIEMBROS_2025_SIN_GUION, MIEMBROS_2024_EN_LINEA]
+)
+def test_los_nombres_de_2024_y_sin_guion_son_conocidos(miembros: list[str]) -> None:
+    assert deriva.revisar_miembros(miembros) == []
+
+
+def test_el_encabezado_de_2024_es_conocido() -> None:
+    cab = list(deriva.ENCABEZADO_COMPARATIVO_2024)
+    assert deriva.revisar_encabezado("x.csv", cab, *deriva.catalogo_comparativo(cab)) == []
+    cab = list(deriva.ENCABEZADO_PROMEDIOS_2024)
+    assert deriva.revisar_encabezado("x.csv", cab, *deriva.catalogo_promedios(cab)) == []
+
+
+def test_un_encabezado_que_no_es_ninguno_de_los_dos_sigue_siendo_critico() -> None:
+    cab = [c for c in deriva.ENCABEZADO_COMPARATIVO_2024 if c != "CMgR[mills/kWh]"]
+    h = deriva.revisar_encabezado("x.csv", cab, *deriva.catalogo_comparativo(cab))
+    assert severidad_de(h, "columna_requerida_ausente") == "critico"
+
+
+def test_un_zip_de_2024_sano_no_genera_hallazgos(tmp_path: Path, zip_cen: ArmarZipCen) -> None:
+    d = date(2024, 8, 14)
+    assert deriva.revisar_zip(zip_cen(tmp_path / "a.zip", d, formato="2024"), d) == []
+
+
+# ==================================================== variantes reales (error A19)
+
+
+def test_una_carpeta_dentro_del_zip_no_es_un_archivo_nuevo() -> None:
+    miembros = [
+        "Antecedentes_CMG_Real_def/",
+        *[f"Antecedentes_CMG_Real_def/{m}" for m in MIEMBROS_REALES],
+    ]
+    assert deriva.revisar_miembros(miembros) == []
+
+
+def test_el_mixto_de_2025_02_26_es_conocido() -> None:
+    """CMG_EN_LINEA en USD/MWh con CMgP/CMgR en mills/kWh."""
+    cab = [
+        "FECHA", "HORA", "MINUTO", "BARRA", "INFO_BARRA_ID", "INFO_BARRA_NOMBRE",
+        "CMG_EN_LINEA[USD/MWh]", "CMgP[mills/kWh]", "CMgR[mills/kWh]", "USD", "MODIFICADO",
+    ]  # fmt: skip
+    assert deriva.revisar_encabezado("x.csv", cab, *deriva.catalogo_comparativo(cab)) == []
+
+
+def test_un_punto_y_coma_al_final_no_es_una_columna_nueva() -> None:
+    cab = [*deriva.ENCABEZADO_COMPARATIVO, ""]
+    assert deriva.revisar_encabezado("x.csv", cab, *deriva.catalogo_comparativo(cab)) == []
+
+
+def test_el_reporte_agrupa_y_dice_cada_archivo(tmp_path: Path) -> None:
+    """2.267 hallazgos sueltos no se pueden leer: el mismo problema va en un grupo."""
+    hallazgos: list[deriva.Hallazgo] = []
+    for nombre in ("a_250201.zip", "b_250202.zip", "c_250203.zip"):
+        h = deriva._h(
+            "critico", "falta_archivo_requerido", "El ZIP no trae 'comparativo'.", "x", "y"
+        )
+        h["archivo"] = nombre
+        hallazgos.append(h)
+    hallazgos.append(deriva._h("info", "otro", "Algo sin archivo.", "", "nada"))
+
+    rutas = deriva.escribir_reporte(hallazgos, tmp_path, "Prueba")
+
+    assert rutas is not None
+    md = rutas[0].read_text(encoding="utf-8")
+    assert md.count("### ") == 2  # dos grupos, no cuatro hallazgos sueltos
+    assert "falta_archivo_requerido (3)" in md
+    for nombre in ("a_250201.zip", "b_250202.zip", "c_250203.zip"):
+        assert f"| {nombre} |" in md
+    js = json.loads(rutas[1].read_text(encoding="utf-8"))
+    assert sorted(h.get("archivo", "") for h in js) == [
+        "",
+        "a_250201.zip",
+        "b_250202.zip",
+        "c_250203.zip",
+    ]

@@ -32,6 +32,15 @@ from cmg_ingesta.silver import leer
 #: Primer dia que la base debe tener: el inicio del Maestro.
 INICIO_BASE = date(cmg_db.PRIMER_MES[0], cmg_db.PRIMER_MES[1], 1)
 
+
+def inicio(desde: str | None) -> date:
+    """Desde cuando se esperan datos: CMGI_DESDE ('2023-01') o, si no hay, INICIO_BASE."""
+    if desde is None:
+        return INICIO_BASE
+    anio, mes = periodo.parsear_mes(desde)
+    return date(anio, mes, 1)
+
+
 Motivo = Literal["maestro", "sin_descargar", "sin_ingerir"]
 
 #: Que hacer con cada motivo. Se usa en los hallazgos y en `cmg estado`.

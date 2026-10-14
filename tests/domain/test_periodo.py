@@ -114,3 +114,14 @@ def test_meses_entre_invertido_falla() -> None:
 def test_formatear() -> None:
     assert periodo.formatear((2025, 3)) == "2025-03"
     assert periodo.formatear((2025, 12)) == "2025-12"
+
+
+def test_parsear_mes() -> None:
+    assert periodo.parsear_mes("2023-01") == (2023, 1)
+    assert periodo.parsear_mes(" 2023-1 ") == (2023, 1)
+
+
+@pytest.mark.parametrize("texto", ["2023", "2023-13", "enero 2023", "2023-01 a 2023-05", ""])
+def test_parsear_mes_rechaza_lo_que_no_es_un_mes(texto: str) -> None:
+    with pytest.raises(ValueError):
+        periodo.parsear_mes(texto)

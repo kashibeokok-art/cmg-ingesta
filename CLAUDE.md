@@ -792,6 +792,11 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho
   (cada `ejemplo` debe calzar con su plantilla). Pedido del usuario: los nombres los escribe a
   mano el Coordinador y se tienen que poder agregar sin tocar código. Lo no reconocido va a
   `bronze/cen_cmg/nombres_no_reconocidos.csv` (Excel: `;` y UTF-8 con BOM) con el texto hallado.
+- **ADR-H13 · 2026-10-13 · Publicación a PostgreSQL por mes, con intercambio de partición.**
+  Cada mes se carga con `COPY` en `cmg.cuarto_AAAA_MM_nuevo`, se le crea la clave y, en una
+  transacción corta, se compara con el mes viejo (→ `cmg.revision`), se desconecta el viejo y se
+  conecta el nuevo. La API nunca ve un mes a medias. Solo se suben los meses cuyo archivo de
+  Silver cambió (sha256 en `cmg.carga_mes`). Se niega a publicar si Silver no refleja el Bronze.
 - **ADR-H12 · 2026-10-09 · Chequeo previo contra una línea base.** Antes de descargar se compara
   el sitio con `config/linea_base_cen.toml` (índice, marcas del HTML, día de referencia
   2026-01-15 con sus 2 documentos, sitemap): 3 peticiones. Un cambio estructural detiene la
@@ -799,6 +804,82 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho
   (pedido del usuario: "los documentos pueden tener varias revisiones").
 
 ## 8. Bitácora
+
+### 2026-10-14 — Sesión 9e: el reporte de los 1.774 ZIP (error A19)
+- El usuario descargó todo (1.774 ZIP, 2024-08-01..2026-10-12, Bronze en la red) y el menú dejó
+  `deriva_20261013_220833`: 318 críticos. Causas: subcarpetas dentro del ZIP, `_15_NUEVO.csv` y,
+  sin aviso, columnas v2 en 49 revisiones de 2025-02/03 donde se leía el valor viejo (A19).
+- Regla nueva: la columna del valor es la **última** candidata del encabezado (verificado en 49).
+  `REGLAS` en la huella del mes → el próximo `ingerir-pagina` rehace todos los meses una vez.
+- Pedido del usuario: cada hallazgo dice su ZIP (`archivo`); el reporte trae un resumen y agrupa.
+- 675 tests (23 necesitan `CMG_PRUEBA_PG`).
+
+### 2026-10-13 — Sesión 9d: Acronis, avance por día y carpetas propias
+- `ingerir-pagina` con testigos lo detuvo **Acronis Cyber Protect** (Active Protection): leer un
+  ZIP, escribir el testigo y borrar el original, en serie, es el patrón de un ransomware. Acronis
+  restauró todo (332 ZIP verificados por sha256 contra el manifiesto). No se cambia el patrón para
+  esquivarlo: lo correcto es una excepción de TI. Disco C: con 12 GB libres.
+- Pedido del usuario: Bronze **y** Silver en una ruta de red. `CMGI_BRONZE_DIR` / `CMGI_SILVER_DIR`
+  (carpetas finales, deben existir: `conexion.exigir_carpeta_propia`, como A17); en la CLI todo
+  pasa por `_silver(cfg)` / `_bronze(cfg)`. Temporales siguen en data_dir.
+- `ingerir-pagina` avisa cada día (`[i/n] fecha tipo`) y cada etapa; borrar un ZIP trabado por
+  Windows se reintenta y, si sigue trabado, el ZIP se queda (no corta la ingesta).
+- El usuario dejó en Silver (red) solo 2023-2024. `CMGI_PG_DESDE` pasa a llamarse **`CMGI_DESDE`**:
+  primer mes de la base para `estado`/menú (cobertura) y para PostgreSQL. El nombre viejo lo
+  rechaza A17 con mensaje.
+- 662 tests (23 necesitan `CMG_PRUEBA_PG`).
+
+### 2026-10-13 — Sesión 9c: testigos en lugar de ZIP, y el formato 2024 de la página
+- Pedido del usuario: su equipo tiene poco disco; Bronze no se puede guardar. `CMGI_CONSERVAR_ZIP=
+  false` → tras escribir el mes en Silver, cada ZIP usado (y las versiones superadas de esos días)
+  se reemplaza por `<nombre>.zip.testigo.json` (sha256, tipo, uso). Al reescribir un mes, los días
+  con testigo se copian del Silver anterior (verificando origen) en vez de leer el ZIP. Días
+  omitidos o sin clasificar conservan su ZIP. Verificado con 9 ZIP reales de 2024-08: Silver
+  idéntico con y sin testigos (577.920 filas), 98 MB → 2,4 KB.
+- **Error A18**: el catálogo de formatos solo se había verificado con ZIP de 2026; 269 de los 332
+  ZIP que bajó el usuario (2024-08..2025-01) no habrían entrado. Formato 2024 (`CMgP/CMgR
+  [mills/kWh]`) verificado contra el nuevo y contra `PromediosBarras_R`; patrón de promedios con
+  `_?` y `[RPE]`. Quedan 2 críticos reales de la fuente, sin efecto (sus días tienen def).
+- 651 tests (23 necesitan `CMG_PRUEBA_PG`).
+
+### 2026-10-13 — Sesión 9b: la base solo desde 2023
+- El usuario corrió `sql/cmg_cen.sql` en el servidor real y empezó `publicar-sql`; alcanzó a subir
+  2 meses (2021). Decisión: **la base `cmg_cen` tiene datos desde 2023-01 en adelante**, no el
+  histórico completo. Silver local sigue completo (2021-01..2024-07).
+- `CMGI_PG_DESDE=AAAA-MM` (config, validado al arrancar) filtra qué meses se suben.
+  `publicar-sql --quitar-anteriores` borra lo anterior en UNA transacción (DETACH+DROP de
+  particiones, Gold, `dia`, `revision`, `documento`, `carga_mes`, barras sin Gold); sin la opción,
+  solo avisa. `--quitar-anteriores` sin `CMGI_PG_DESDE` → exit 2.
+- Contador `[i/n]` por mes en la salida de `publicar-sql`.
+- Ojo para tests: `elegir_por_dia` ignora días antes de 2024-08-01 (`PRIMER_DIA`), así que un
+  test con documentos debe usar fechas de la página.
+- 629 tests (23 necesitan `CMG_PRUEBA_PG`).
+
+### 2026-10-13 — Sesión 9: base PostgreSQL cmg_cen
+- Decisión del usuario: **opción C**: el usuario de la carpeta del servidor ejecuta algo (exe o
+  Excel) que le pide los datos a una **API** en el servidor; la API lee PostgreSQL 18.3
+  (192.168.0.85:5433, base `cmg_cen`). Lo usa cualquiera con acceso; debe mostrar CMg y también
+  sus actualizaciones y revisiones.
+- `sql/cmg_cen.sql`: esquema `cmg` (dueño `cmg_carga`), `cuarto` particionada por mes con PK
+  `(barra_id, fecha, hora, minuto)`, dimensiones `barra` y `origen`, `documento`, `dia`,
+  `revision`, `carga_mes`, vista `cmg_15min`; usuario `cmg_lectura` solo lee. Idempotente.
+- `publicar/postgres.py` + `cmg publicar-sql` (ADR-H13). Config: `CMGI_PG_URL` (`SecretStr`).
+- Probado contra un **PostgreSQL 18.3 portable local** (binarios EDB en el scratchpad, puerto
+  55433): 12 tests de integración (se saltan sin `CMG_PRUEBA_PG`). Con 2 meses reales: 2 min 13 s,
+  391 MB por mes, consulta de una barra 12 ms.
+- Detalle que evitó un error: `INSERT ... ON CONFLICT DO NOTHING` gasta la secuencia en cada
+  conflicto; con `smallint` y ~1.700 barras por mes se agotaría en ~20 meses. Se insertan solo
+  las barras que faltan (test).
+- **Gold en PostgreSQL** (pedido del usuario: "subir la capa silver y la capa gold para que un
+  usuario pueda pedir datos más verdes y procesados"): `cmg.mes_barra` y `cmg.mes_bloque`, vistas
+  `cmg_mensual` y `cmg_mensual_bloque`. Se recalculan en la misma transacción que el mes de
+  `cuarto`; `carga_mes.dias_preliminar` avisa si el mes aún puede cambiar. El riesgo nodal NO se
+  materializa (millones de pares): la API lo calcula al vuelo. Comparado con el Gold del programa
+  en 25 barras reales × 2 meses: **diferencia 0**.
+- **Las tablas se crearon SOLO en el PostgreSQL de prueba local.** La base real `cmg_cen` en el
+  servidor del usuario sigue vacía hasta que él corra `sql/cmg_cen.sql`.
+- 615 tests. Siguiente: la API (lee `cmg_15min`, `cmg_mensual`, `cmg_mensual_bloque`, `dia`,
+  `revision`) y el cliente para usuarios.
 
 ### 2026-10-13 — Sesión 8: revisión de los cambios de la sesión de revisión guiada
 - Se revisaron los cambios sin commitear de otra sesión (config con un solo campo,

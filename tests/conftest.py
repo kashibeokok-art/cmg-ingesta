@@ -120,26 +120,55 @@ def zip_cen() -> ArmarZipCen:
         barras: tuple[str, ...] = ("A.BLANCAS_____013", "STA.ELVIRA____013"),
         pre: float = 40.0,
         definitivo: float = 50.0,
+        formato: str = "2025",
+        carpeta: str = "",
+        v2: tuple[float, float] | None = None,
+        v2_al_reves: bool = False,
+        sufijo: str = "",
     ) -> Path:
+        """Variantes reales del Coordinador:
+
+        - `formato="2024"`: CMgE/CMgP/CMgR en mills/kWh y PromediosBarras sin `_`.
+        - `carpeta`: todo dentro de una carpeta del ZIP (109 ZIP de 2025-02..2026-09).
+        - `v2=(pre, def)`: revision con columnas `... v2` ademas de las normales, que
+          quedan con `pre`/`definitivo` (el v1). Con `v2_al_reves`, el orden de
+          `pre-v2_250228`: `PRE v2, DEF v2, PRE, DEF`, donde lo revisado va al final.
+        - `sufijo="_NUEVO"`: `CmgBarrasComparativo_..._15_NUEVO.csv`.
+        """
         f = dia.strftime("%Y%m%d")
         rango = horas if horas is not None else list(range(24))
-        lineas = [";".join(deriva.ENCABEZADO_COMPARATIVO)]
+        viejo = formato == "2024"
+        cab = list(deriva.ENCABEZADO_COMPARATIVO_2024 if viejo else deriva.ENCABEZADO_COMPARATIVO)
+        valores = [str(pre), str(definitivo)]
+        if v2 is not None:
+            nuevas = ["CMG_REAL_PRE v2[USD/MWh]", "CMG_REAL_DEF v2[USD/MWh]"]
+            if v2_al_reves:  # las "v2" primero, con lo VIEJO; las normales al final, con lo nuevo
+                cab[7:9] = nuevas + cab[7:9]
+                valores = valores + [str(v2[0]), str(v2[1])]
+            else:
+                cab[9:9] = nuevas
+                valores = valores + [str(v2[0]), str(v2[1])]
+        lineas = [";".join(cab)]
         for barra in barras:
             for h in rango:
                 for m in (0, 15, 30, 45):
-                    lineas.append(f"{f};{h};{m};{barra};141;X;1.0;{pre};{definitivo};915.95;NO")
+                    lineas.append(f"{f};{h};{m};{barra};141;X;1.0;{';'.join(valores)};915.95;NO")
         miembros = {
-            f"CmgBarrasComparativo_{f}_{f}_15.csv": "\n".join(lineas),
-            f"PromediosBarras_{f}_{f}_R.csv": ";".join(deriva.ENCABEZADO_PROMEDIOS),
+            f"CmgBarrasComparativo_{f}_{f}_15{sufijo}.csv": "\n".join(lineas),
+            f"PromediosBarras{'' if viejo else '_'}{f}_{f}_R.csv": ";".join(
+                deriva.ENCABEZADO_PROMEDIOS_2024 if viejo else deriva.ENCABEZADO_PROMEDIOS
+            ),
             f"CMgBarrasMinuto_{f}_{f}.zip": "",
-            f"Fpen_{f}.xlsx": "",
+            (f"Fpen_Reales_{dia:%y%m%d}_MOD_def.xlsx" if viejo else f"Fpen_{f}.xlsx"): "",
             "FPen_Mapeo_Barras.xlsx": "",
             f"Barras_Subsistemas_{f}.xlsx": "",
         }
         ruta.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(ruta, "w") as zf:
+            if carpeta:
+                zf.writestr(carpeta + "/", "")  # la entrada de la carpeta, como los reales
             for nombre, contenido in miembros.items():
-                zf.writestr(nombre, contenido)
+                zf.writestr(f"{carpeta}/{nombre}" if carpeta else nombre, contenido)
         return ruta
 
     return _armar

@@ -37,7 +37,7 @@ from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 from bs4 import BeautifulSoup
 
@@ -56,6 +56,8 @@ class Hallazgo(TypedDict):
     detalle: str
     evidencia: str
     accion: str
+    #: El archivo (ZIP) donde se encontro, si el hallazgo es de un archivo.
+    archivo: NotRequired[str]
 
 
 def _h(severidad: Severidad, tipo: str, detalle: str, evidencia: str, accion: str) -> Hallazgo:
@@ -76,10 +78,14 @@ def _h(severidad: Severidad, tipo: str, detalle: str, evidencia: str, accion: st
 
 #: (nombre logico, patron, obligatorio). Las fechas del nombre son AAAAMMDD.
 MIEMBROS_ZIP: list[tuple[str, re.Pattern[str], bool]] = [
-    ("comparativo", re.compile(r"^CmgBarrasComparativo_\d{8}_\d{8}_15\.csv$"), True),
-    ("promedios", re.compile(r"^PromediosBarras_\d{8}_\d{8}_[RP]\.csv$"), True),
+    # "_15_NUEVO.csv": pre-v2_250209 y pre-v2_250224 (2026-10-14, error A19)
+    ("comparativo", re.compile(r"^CmgBarrasComparativo_\d{8}_\d{8}_15(_NUEVO)?\.csv$"), True),
+    # el guion bajo despues de "PromediosBarras" va y viene: falta en todo 2024-08/09
+    # y en 148 de 211 ZIP de 2024-09..2025-01 (medido el 2026-10-13, error A18). Ademas
+    # del _R (definitivo) y el _P (preliminar) existe el _E (en linea): pre_240911.zip
+    ("promedios", re.compile(r"^PromediosBarras_?\d{8}_\d{8}_[RPE]\.csv$"), True),
     ("minuto", re.compile(r"^CMgBarrasMinuto_\d{8}_\d{8}\.zip$"), False),
-    ("fpen", re.compile(r"^Fpen_\d{8}\.xlsx$"), False),
+    ("fpen", re.compile(r"^Fpen_(\d{8}|Reales_\d{6}_MOD_\w+)\.xlsx$"), False),
     ("fpen_mapeo", re.compile(r"^FPen_Mapeo_Barras\.xlsx$"), False),
     ("subsistemas", re.compile(r"^Barras_Subsistemas_\d{8}\.xlsx$"), False),
 ]
@@ -103,6 +109,29 @@ REQUERIDAS_COMPARATIVO = frozenset(
     {"FECHA", "HORA", "MINUTO", "BARRA", "CMG_REAL_PRE[USD/MWh]", "CMG_REAL_DEF[USD/MWh]"}
 )
 
+#: El formato ANTERIOR, de los ZIP publicados hasta el 2024-10-08 (dias de operacion
+#: 2024-08-01 a 2024-09-30). Mismas columnas, otros nombres, en mills/kWh, que es
+#: lo mismo que USD/MWh. Verificado el 2026-10-13 con ZIP reales (error A18):
+#: CMgE = CMG_EN_LINEA y CMgP = CMG_REAL_PRE (diferencia 0 en 4 dias con los dos
+#: formatos, ~145.000 filas cada uno); CMgR = CMG_REAL_DEF (0 en todo ZIP pre, e
+#: igual fila a fila al PromediosBarras "R" del mismo ZIP, en 2024-08-14 y 09-30).
+ENCABEZADO_COMPARATIVO_2024: tuple[str, ...] = (
+    "FECHA",
+    "HORA",
+    "MINUTO",
+    "BARRA",
+    "INFO_BARRA_ID",
+    "INFO_BARRA_NOMBRE",
+    "CMgE[mills/kWh]",
+    "CMgP[mills/kWh]",
+    "CMgR[mills/kWh]",
+    "USD",
+    "MODIFICADO",
+)
+REQUERIDAS_COMPARATIVO_2024 = frozenset(
+    {"FECHA", "HORA", "MINUTO", "BARRA", "CMgP[mills/kWh]", "CMgR[mills/kWh]"}
+)
+
 #: Igual en `_P` (preliminar) y `_R` (definitivo).
 ENCABEZADO_PROMEDIOS: tuple[str, ...] = (
     "BARRA",
@@ -117,6 +146,61 @@ ENCABEZADO_PROMEDIOS: tuple[str, ...] = (
     "REPORTE",
 )
 REQUERIDAS_PROMEDIOS = frozenset({"BARRA", "FECHA", "HORA", "MINUTO", "CMg[USD/MWh]"})
+
+#: El formato anterior (mismo periodo que ENCABEZADO_COMPARATIVO_2024).
+ENCABEZADO_PROMEDIOS_2024: tuple[str, ...] = (
+    "BARRA",
+    "BARRA INFO ID",
+    "BARRA INFO NOMBRE",
+    "FECHA",
+    "HORA",
+    "MINUTO",
+    "CMg[$/KWh]",
+    "CMg[mills/kWh]",
+    "INTERVALO",
+    "REPORTE",
+)
+REQUERIDAS_PROMEDIOS_2024 = frozenset({"BARRA", "FECHA", "HORA", "MINUTO", "CMg[mills/kWh]"})
+
+
+#: Columnas que traen algunas revisiones (v2) de 2025-02/03, ademas de las normales,
+#: Son conocidas: no se avisan. Cual columna se lee la decide `pagina_cen.columna_valor`.
+COLUMNAS_V2 = frozenset(
+    {
+        "CMG_REAL_PRE v2[USD/MWh]",
+        "CMG_REAL_DEF v2[USD/MWh]",
+        "CMG_REAL_PRE_v2[USD/MWh]",
+        "CMG_REAL_DEF_v2[USD/MWh]",
+    }
+)
+
+
+def catalogo_comparativo(cab: list[str]) -> tuple[tuple[str, ...], frozenset[str]]:
+    """El encabezado conocido contra el que se compara: el de 2024 si trae sus columnas.
+
+    Variantes reales que tambien son conocidas: las columnas v2 de 2025-02/03, y el
+    formato mixto de 2025-02-26 (CMG_EN_LINEA en USD/MWh con CMgP/CMgR en mills/kWh).
+    """
+    if "CMgR[mills/kWh]" in cab:
+        base = ENCABEZADO_COMPARATIVO_2024
+        if "CMG_EN_LINEA[USD/MWh]" in cab:  # el mixto de 2025-02-26
+            base = tuple("CMG_EN_LINEA[USD/MWh]" if c == "CMgE[mills/kWh]" else c for c in base)
+        requeridas = REQUERIDAS_COMPARATIVO_2024
+    else:
+        base, requeridas = ENCABEZADO_COMPARATIVO, REQUERIDAS_COMPARATIVO
+    if not any(c in COLUMNAS_V2 for c in cab):
+        return base, requeridas
+    # con columnas v2, el orden conocido es el del archivo (pre-v2_250228 las trae
+    # primero): las conocidas en su lugar y, al final, las conocidas que falten
+    conocidas = set(base) | COLUMNAS_V2
+    en_orden = [c for c in cab if c in conocidas]
+    return (*en_orden, *(c for c in base if c not in cab)), requeridas
+
+
+def catalogo_promedios(cab: list[str]) -> tuple[tuple[str, ...], frozenset[str]]:
+    if "CMg[mills/kWh]" in cab:
+        return ENCABEZADO_PROMEDIOS_2024, REQUERIDAS_PROMEDIOS_2024
+    return ENCABEZADO_PROMEDIOS, REQUERIDAS_PROMEDIOS
 
 
 # ===================================================================== slugs
@@ -347,12 +431,25 @@ def _revisar_nombre_y_etiqueta(dia: date, d: cen.Documento) -> list[Hallazgo]:
 # ===================================================================== ZIP
 
 
+def _sin_carpeta(miembro: str) -> str:
+    """'Antecedentes_CMG_Real_def/CmgBarras...csv' -> 'CmgBarras...csv'.
+
+    109 ZIP de 2025-02 a 2026-09 traen todo dentro de una carpeta (error A19): el
+    archivo es el mismo, solo cambia la ruta dentro del ZIP.
+    """
+    return miembro.rsplit("/", 1)[-1]
+
+
 def revisar_miembros(nombres: list[str]) -> list[Hallazgo]:
     """Compara los archivos de un ZIP contra los conocidos."""
     hallazgos: list[Hallazgo] = []
     encontrados: set[str] = set()
     for nombre in nombres:
-        logico = next((n for n, patron, _ in MIEMBROS_ZIP if patron.match(nombre)), None)
+        if nombre.endswith("/"):  # una carpeta dentro del ZIP, no un archivo
+            continue
+        logico = next(
+            (n for n, patron, _ in MIEMBROS_ZIP if patron.match(_sin_carpeta(nombre))), None
+        )
         if logico is None:
             hallazgos.append(
                 _h(
@@ -387,8 +484,13 @@ def revisar_miembros(nombres: list[str]) -> list[Hallazgo]:
 def revisar_encabezado(
     miembro: str, columnas: list[str], esperado: tuple[str, ...], requeridas: frozenset[str]
 ) -> list[Hallazgo]:
-    """Compara el encabezado real de un CSV contra el conocido."""
+    """Compara el encabezado real de un CSV contra el conocido.
+
+    Un nombre vacio no es una columna: lo deja un `;` al final de la linea
+    (def_v2_250130, def_250429). Se ignora aqui y tambien en el orden.
+    """
     hallazgos: list[Hallazgo] = []
+    columnas = [c for c in columnas if c.strip()]
     reales = set(columnas)
     faltan = sorted(requeridas - reales)
     nuevas = sorted(reales - set(esperado))
@@ -605,7 +707,17 @@ def _filas_comparativo(
 
 
 def revisar_zip(ruta: Path, dia: date) -> list[Hallazgo]:
-    """Integridad, archivos, encabezados y forma del dia de un ZIP descargado."""
+    """Integridad, archivos, encabezados y forma del dia de un ZIP descargado.
+
+    Cada hallazgo lleva `archivo` = el nombre del ZIP, para poder ir a buscarlo.
+    """
+    hallazgos = _revisar_zip(ruta, dia)
+    for h in hallazgos:
+        h["archivo"] = ruta.name
+    return hallazgos
+
+
+def _revisar_zip(ruta: Path, dia: date) -> list[Hallazgo]:
     try:
         zf = zipfile.ZipFile(ruta)
     except zipfile.BadZipFile:
@@ -637,17 +749,14 @@ def revisar_zip(ruta: Path, dia: date) -> list[Hallazgo]:
         patron_comparativo = MIEMBROS_ZIP[0][1]
         patron_promedios = MIEMBROS_ZIP[1][1]
         for miembro in nombres:
-            if patron_promedios.match(miembro):  # solo el encabezado
+            base = _sin_carpeta(miembro)
+            if patron_promedios.match(base):  # solo el encabezado
                 cab: list[str] = next(_leer_csv_de_zip(zf, miembro), [])
-                hallazgos += revisar_encabezado(
-                    miembro, cab, ENCABEZADO_PROMEDIOS, REQUERIDAS_PROMEDIOS
-                )
-            elif patron_comparativo.match(miembro):  # encabezado y forma del dia
+                hallazgos += revisar_encabezado(miembro, cab, *catalogo_promedios(cab))
+            elif patron_comparativo.match(base):  # encabezado y forma del dia
                 lector = _leer_csv_de_zip(zf, miembro)
                 cab = next(lector, [])
-                h_cab = revisar_encabezado(
-                    miembro, cab, ENCABEZADO_COMPARATIVO, REQUERIDAS_COMPARATIVO
-                )
+                h_cab = revisar_encabezado(miembro, cab, *catalogo_comparativo(cab))
                 hallazgos += h_cab
                 if any(h["severidad"] == "critico" for h in h_cab):
                     continue
@@ -1148,6 +1257,12 @@ def _revisiones_pendientes(
 ORDEN_SEVERIDAD = {"critico": 0, "aviso": 1, "info": 2}
 
 
+def _sin_nombres(h: Hallazgo) -> str:
+    """El detalle sin los nombres de archivo y fechas, para agrupar el mismo problema."""
+    texto = re.sub(r"\S+\.(csv|zip|xlsx)", "<archivo>", h["detalle"])
+    return re.sub(r"\d{4}-\d{2}-\d{2}", "<dia>", texto)
+
+
 def escribir_reporte(
     hallazgos: list[Hallazgo], carpeta: Path, titulo: str = "Vigilancia de la fuente"
 ) -> tuple[Path, Path] | None:
@@ -1160,8 +1275,15 @@ def escribir_reporte(
     carpeta.mkdir(parents=True, exist_ok=True)
     sello = time.strftime("%Y%m%d_%H%M%S")
     md, js = carpeta / f"deriva_{sello}.md", carpeta / f"deriva_{sello}.json"
-    ordenados = sorted(hallazgos, key=lambda h: (ORDEN_SEVERIDAD[h["severidad"]], h["tipo"]))
+    ordenados = sorted(
+        hallazgos,
+        key=lambda h: (ORDEN_SEVERIDAD[h["severidad"]], h["tipo"], h.get("archivo", "")),
+    )
     conteo = Counter(h["severidad"] for h in hallazgos)
+    # el mismo problema en muchos archivos es UN grupo con la lista de archivos
+    grupos: dict[tuple[str, str, str, str], list[Hallazgo]] = {}
+    for h in ordenados:
+        grupos.setdefault((h["severidad"], h["tipo"], _sin_nombres(h), h["accion"]), []).append(h)
 
     lineas = [
         f"# {titulo}",
@@ -1185,19 +1307,32 @@ def escribir_reporte(
         "que se adopte hay que actualizar el catalogo **y agregar un test con el caso "
         "real**, para que quede como regresion.",
         "",
-        "## Hallazgos",
+        "## Resumen",
         "",
+        "| # | Severidad | Tipo | Cuantos | Archivos |",
+        "|---|---|---|---|---|",
     ]
-    for i, h in enumerate(ordenados, 1):
+    for i, ((sev, tipo, _, _), hs) in enumerate(grupos.items(), 1):
+        archivos = {h["archivo"] for h in hs if "archivo" in h}
+        lineas.append(f"| {i} | {sev} | {tipo} | {len(hs)} | {len(archivos) or '—'} |")
+    lineas += ["", "## Hallazgos", ""]
+    for i, ((sev, tipo, detalle, accion), hs) in enumerate(grupos.items(), 1):
         lineas += [
-            f"### {i}. [{h['severidad'].upper()}] {h['tipo']}",
+            f"### {i}. [{sev.upper()}] {tipo} ({len(hs)})",
             "",
-            h["detalle"],
+            detalle,
             "",
-            f"- **Evidencia:** `{h['evidencia']}`" if h["evidencia"] else "- **Evidencia:** —",
-            f"- **Accion:** {h['accion']}",
+            f"- **Accion:** {accion}",
             "",
+            "| Archivo | Detalle | Evidencia |",
+            "|---|---|---|",
         ]
+        for h in hs:
+            evidencia = f"`{h['evidencia']}`" if h["evidencia"] else "—"
+            lineas.append(
+                f"| {h.get('archivo', '—')} | {h['detalle']} | {evidencia.replace('|', '/')} |"
+            )
+        lineas.append("")
     md.write_text("\n".join(lineas), encoding="utf-8")
     js.write_text(json.dumps(ordenados, indent=1, ensure_ascii=False), encoding="utf-8")
     return md, js

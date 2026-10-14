@@ -98,6 +98,14 @@ def parsear_periodo(texto: str, primero: Mes, ultimo: Mes) -> tuple[Mes, Mes]:
     return (desde, hasta)
 
 
+def parsear_mes(texto: str) -> Mes:
+    """'2023-01' -> (2023, 1). Un solo mes, sin rango ni recorte."""
+    m = _MES.match(texto.strip())
+    if not m:
+        raise ValueError(f"mes no reconocido: {texto!r}. Se escribe AAAA-MM, por ejemplo 2023-01")
+    return _validar_mes(int(m.group(1)), int(m.group(2)))
+
+
 def formatear(mes: Mes) -> str:
     """(2025, 3) -> '2025-03'."""
     return f"{mes[0]}-{mes[1]:02d}"

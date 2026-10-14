@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Annotated, NoReturn
 
 import duckdb
+import psycopg
 import typer
 from pydantic import ValidationError
 
@@ -38,6 +39,7 @@ from cmg_ingesta.extract import ingerir_cen, migrar
 from cmg_ingesta.gold import bloques_mes, riesgo_nodal
 from cmg_ingesta.menu import app as menu_app
 from cmg_ingesta.menu.consola import Consola
+from cmg_ingesta.publicar import postgres as pg
 from cmg_ingesta.quality import cobertura, deriva
 from cmg_ingesta.reportes import exportar
 from cmg_ingesta.silver import leer
@@ -72,6 +74,33 @@ def _exigir_carpeta(cfg: Settings) -> None:
     """Para los comandos que escriben bajo data_dir sin abrir DuckDB (descarga, vigilancia)."""
     try:
         conexion.exigir_carpeta(cfg.data_dir)
+        _exigir_propias(cfg)
+    except ValueError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(SALIDA_ERROR) from e
+
+
+def _exigir_propias(cfg: Settings) -> None:
+    """Las carpetas de Silver y Bronze elegidas en el .env (CMGI_SILVER_DIR/BRONZE_DIR)."""
+    if cfg.silver_dir is not None:
+        conexion.exigir_carpeta_propia(cfg.silver_dir, "CMGI_SILVER_DIR")
+    if cfg.bronze_dir is not None:
+        conexion.exigir_carpeta_propia(cfg.bronze_dir, "CMGI_BRONZE_DIR")
+
+
+def _silver(cfg: Settings) -> Path:
+    """La carpeta de Silver. Si se eligio una (CMGI_SILVER_DIR) y no esta, termina (1)."""
+    try:
+        return conexion.ruta_silver(cfg.data_dir, cfg.silver_dir)
+    except ValueError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(SALIDA_ERROR) from e
+
+
+def _bronze(cfg: Settings) -> Path:
+    """La carpeta de Bronze. Si se eligio una (CMGI_BRONZE_DIR) y no esta, termina (1)."""
+    try:
+        return conexion.ruta_bronze_cen(cfg.data_dir, cfg.bronze_dir)
     except ValueError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(SALIDA_ERROR) from e
@@ -83,6 +112,7 @@ def _conectar(cfg: Settings, crear: bool = False) -> duckdb.DuckDBPyConnection:
     Va fuera del `try` de cada comando, por eso atrapa aqui su propio error.
     """
     try:
+        _exigir_propias(cfg)
         return conexion.abrir(cfg.data_dir, crear=crear)
     except ValueError as e:
         typer.echo(f"Error: {e}", err=True)
@@ -102,9 +132,10 @@ def _hoy() -> date:
 def _cobertura(con: duckdb.DuckDBPyConnection, cfg: Settings) -> cobertura.Cobertura:
     """Que dias deberia tener la base y cuales tiene. Sin red, ~0,4 s."""
     return cobertura.calcular(
-        cobertura.dias_en_base(con, conexion.ruta_silver(cfg.data_dir)),
-        cen.leer_manifiesto(conexion.ruta_bronze_cen(cfg.data_dir)),
+        cobertura.dias_en_base(con, _silver(cfg)),
+        cen.leer_manifiesto(_bronze(cfg)),
         hoy=_hoy(),
+        desde=cobertura.inicio(cfg.desde),
     )
 
 
@@ -176,8 +207,14 @@ def principal(contexto: typer.Context) -> None:
 @app.command()
 def menu() -> None:
     """Abre el menu interactivo, con busqueda de barras y seleccion multiple."""
+    cfg = _settings()
+    try:
+        _exigir_propias(cfg)
+    except ValueError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(SALIDA_ERROR) from e
     contexto = menu_app.Contexto(
-        cfg=_settings(),
+        cfg=cfg,
         consola=Consola(),
         nueva_sesion=_sesion,
         hoy=_hoy,
@@ -193,7 +230,7 @@ def menu() -> None:
 def estado() -> None:
     """Muestra que datos tiene la base."""
     cfg = _settings()
-    base = conexion.ruta_silver(cfg.data_dir)
+    base = _silver(cfg)
     if not leer.base_existe(base):
         typer.echo(f"La base esta vacia. Esperada en: {base}")
         typer.echo("Corre primero:  cmg migrar-historico <carpeta CMG_DB>")
@@ -229,7 +266,7 @@ def migrar_historico(
     if not origen.is_dir():
         _uso(f"No existe la carpeta: {origen}")
 
-    destino = conexion.ruta_silver(cfg.data_dir)
+    destino = _silver(cfg)
     con = _conectar(cfg, crear=True)  # la unica que construye la base desde cero
     try:
         reporte = migrar.migrar_historico(con, origen, destino, avisar=typer.echo)
@@ -263,7 +300,7 @@ def barras(
 ) -> None:
     """Lista las barras de la base, filtrando por nombre."""
     cfg = _settings()
-    base = conexion.ruta_silver(cfg.data_dir)
+    base = _silver(cfg)
     con = _conectar(cfg)
     try:
         todas = leer.barras(con, base)
@@ -301,7 +338,7 @@ def descargar(
             f"Error: formato no soportado: {desconocidos}. Validos: {', '.join(exportar.FORMATOS)}"
         )
     cfg = _settings()
-    base = conexion.ruta_silver(cfg.data_dir)
+    base = _silver(cfg)
     con = _conectar(cfg)
     try:
         primero, ultimo = leer.rango_disponible(con, base)
@@ -333,7 +370,7 @@ def bloques(
 ) -> None:
     """Muestra en pantalla el promedio mensual por bloque de una barra."""
     cfg = _settings()
-    base = conexion.ruta_silver(cfg.data_dir)
+    base = _silver(cfg)
     con = _conectar(cfg)
     try:
         primero, ultimo = leer.rango_disponible(con, base)
@@ -359,7 +396,7 @@ def riesgo(
 ) -> None:
     """Riesgo nodal entre dos barras: diferencia de CMg en USD y en porcentaje."""
     cfg = _settings()
-    base = conexion.ruta_silver(cfg.data_dir)
+    base = _silver(cfg)
     con = _conectar(cfg)
     try:
         primero, ultimo = leer.rango_disponible(con, base)
@@ -412,7 +449,7 @@ def descargar_cen(
     _validar_pausa(pausa)
     _exigir_carpeta(cfg)
 
-    carpeta = conexion.ruta_bronze_cen(cfg.data_dir)
+    carpeta = _bronze(cfg)
     typer.echo(f"Descargando {d1} a {d2} en {carpeta}")
     try:
         nuevos, hallazgos = deriva.sincronizar_vigilando(
@@ -441,18 +478,20 @@ def ingerir_pagina(
     """Pasa a Silver los ZIP del Coordinador ya descargados (2024-08 en adelante).
 
     Incremental: solo reescribe los meses cuyos archivos cambiaron. Un dia con
-    hallazgo critico no entra y se reporta.
+    hallazgo critico no entra y se reporta. Con CMGI_CONSERVAR_ZIP=false en el
+    .env, cada ZIP que queda en Silver se reemplaza por un testigo liviano.
     """
     cfg = _settings()
     con = _conectar(cfg)
     try:
         reporte, hallazgos = ingerir_cen.ingerir_pagina(
             con,
-            conexion.ruta_bronze_cen(cfg.data_dir),
-            conexion.ruta_silver(cfg.data_dir),
+            _bronze(cfg),
+            _silver(cfg),
             conexion.ruta_staging(cfg.data_dir),
             avisar=typer.echo,
             forzar=forzar,
+            conservar_zip=cfg.conservar_zip,
         )
     except ValueError as e:
         typer.echo(f"Error: {e}", err=True)
@@ -477,6 +516,71 @@ def ingerir_pagina(
 
 
 @app.command()
+def publicar_sql(
+    forzar: Annotated[
+        bool, typer.Option(help="Volver a subir todos los meses aunque no hayan cambiado.")
+    ] = False,
+    quitar_anteriores: Annotated[
+        bool,
+        typer.Option(help="Antes de subir, borrar de la base los meses anteriores a CMGI_DESDE."),
+    ] = False,
+) -> None:
+    """Sube Silver a PostgreSQL (base cmg_cen), solo los meses que cambiaron.
+
+    Registra que documento hay en cada dia y, si un dia ya cargado cambia de
+    version (pre a def, def a v2), cuanto cambio el CMg. Necesita CMGI_PG_URL en el
+    .env, con el usuario cmg_carga. El esquema se crea antes con sql/cmg_cen.sql.
+    Con CMGI_DESDE=AAAA-MM en el .env, solo sube de ese mes en adelante.
+    """
+    cfg = _settings()
+    desde = None if cfg.desde is None else periodo.parsear_mes(cfg.desde)
+    if quitar_anteriores and desde is None:
+        _uso("--quitar-anteriores necesita CMGI_DESDE en el .env (por ejemplo 2023-01).")
+    if cfg.pg_url is None:
+        typer.echo(
+            "Falta CMGI_PG_URL en el .env: la conexion a cmg_cen con el usuario cmg_carga, "
+            "por ejemplo postgresql://cmg_carga:CLAVE@192.168.0.85:5433/cmg_cen",
+            err=True,
+        )
+        raise typer.Exit(SALIDA_ERROR)
+    con = _conectar(cfg)
+    try:
+        with pg.conectar(cfg.pg_url.get_secret_value()) as conn:
+            resultados = pg.publicar(
+                con,
+                conn,
+                _silver(cfg),
+                _bronze(cfg),
+                conexion.ruta_staging(cfg.data_dir),
+                forzar=forzar,
+                avisar=typer.echo,
+                desde=desde,
+                quitar=quitar_anteriores,
+            )
+    except psycopg.OperationalError as e:
+        # el mensaje de psycopg no trae la clave; la URL no se imprime
+        typer.echo(f"No se pudo conectar a PostgreSQL: {str(e).strip()}", err=True)
+        raise typer.Exit(SALIDA_ERROR) from e
+    except psycopg.errors.UndefinedTable as e:
+        typer.echo("La base no tiene el esquema: corre antes sql/cmg_cen.sql.", err=True)
+        raise typer.Exit(SALIDA_ERROR) from e
+    except ValueError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(SALIDA_ERROR) from e
+    finally:
+        con.close()
+
+    if resultados:
+        filas = sum(r["filas"] for r in resultados)
+        revisados = sum(r["revisiones"] for r in resultados)
+        typer.echo("")
+        typer.echo(
+            f"{len(resultados)} mes(es) subido(s), {filas:,} filas; "
+            f"{revisados} dia(s) con revision registrada."
+        )
+
+
+@app.command()
 def vigilar_fuente(
     dias: Annotated[int, typer.Option(help="Cuantos dias recientes revisar en la web.")] = 7,
     pausa: Annotated[float, typer.Option(help="Segundos entre peticiones (minimo 1).")] = 1.0,
@@ -495,7 +599,7 @@ def vigilar_fuente(
     try:
         hallazgos = deriva.vigilar_fuente(
             _sesion(),
-            conexion.ruta_bronze_cen(cfg.data_dir),
+            _bronze(cfg),
             hasta=hoy - timedelta(days=1),
             dias=dias,
             pausa=pausa,
