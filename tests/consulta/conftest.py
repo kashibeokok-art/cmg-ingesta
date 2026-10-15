@@ -52,6 +52,7 @@ def _silver_mes(
                (h = 24) AS es_hora_extra,
                CASE WHEN h < 24 THEN CAST(make_date({anio}, {mes}, d) AS TIMESTAMP)
                     + to_hours(h) + to_minutes(m) END AS fecha_hora,
+               CAST(900 + d AS DOUBLE) AS usd_clp,
                '{origen}' AS origen, now()::TIMESTAMP AS ingerido_en
         FROM b, (SELECT unnest({horas}) AS h), (SELECT unnest([0, 15, 30, 45]) AS m),
              (SELECT unnest(range(1, {dias + 1})) AS d)

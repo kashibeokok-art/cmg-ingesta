@@ -762,3 +762,21 @@ def test_mes_rehace_solo_ese_mes_aunque_no_haya_cambiado(
         con, tmp_path / "bronze", tmp_path / "silver", tmp_path / "staging", meses=[(2026, 6)]
     )
     assert [(f["anio"], f["mes"]) for f in reporte] == [(2026, 6)]
+
+
+# ========================================== tipo de cambio (columna USD, 2026-10-15)
+
+
+def test_la_ingesta_guarda_el_tipo_de_cambio(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, bronze: Callable[..., Path]
+) -> None:
+    """Pedido del usuario: la columna USD (CLP por dolar) del archivo se conserva."""
+    bronze(date(2026, 6, 15))
+    bronze(date(2024, 8, 14), formato="2024")
+    correr(con, tmp_path)
+    patron = str(tmp_path / "silver" / "**" / "*.parquet")
+    filas = con.execute(
+        f"SELECT fecha, min(usd_clp), max(usd_clp) FROM read_parquet('{patron}') "
+        "GROUP BY fecha ORDER BY fecha"
+    ).fetchall()
+    assert filas == [(date(2024, 8, 14), 915.95, 915.95), (date(2026, 6, 15), 915.95, 915.95)]

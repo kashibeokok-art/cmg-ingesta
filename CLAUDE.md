@@ -805,6 +805,50 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho
 
 ## 8. Bitácora
 
+### 2026-10-15 — Sesión 11c: se conserva el tipo de cambio (columna USD)
+- Pedido del usuario: conservar la columna USD de los archivos del Coordinador. Medido en 53 días
+  (2024-08..2026-10): **un valor por día**, igual en todas las barras (CLP por dólar). El
+  Maestro (CMG_DB) **no** la trae: 2023-01..2024-07 quedan sin dólar.
+- Silver: columna `usd_clp` (en `esquema.COLUMNAS`), única en `COLUMNAS_OPCIONALES` (quien no la
+  trae escribe NULL); `leer.sql_dataset` con `union_by_name` para leer meses viejos y nuevos
+  juntos; `REGLAS = "2026-10-15"` → `ingerir-pagina` rehace todos los meses una vez.
+- PostgreSQL: un valor por día en `cmg.dia.usd_clp` (no en `cuarto`: 300 M de repeticiones);
+  `publicar-sql` agrega la columna solo (`asegurar_columnas`) y la llena desde Silver.
+- App: "Tipo de cambio [CLP/USD]" en series, ancha, CSV y "Versión por día". Se lee con
+  `to_jsonb(d)->>'usd_clp'`: si la app nueva se instala antes de publicar, sale vacío sin fallar.
+- Verificado con ZIP reales: 956,58 (2024-08-01, formato 2024) y 970,46 (2026-10-01).
+- 759 tests.
+
+### 2026-10-15 — Sesión 11b: la app con varias barras o todas
+- Pedido: elegir más de una barra o todas. Decisiones del usuario: varias → Excel con **una
+  columna por barra**; todas → **CSV con una columna por barra** (propuesta del usuario: sin
+  límite de filas ni columnas en CSV; ~2.976 filas × 1.442 columnas por mes) + Excel de bloques.
+- `datos.serie_ancha` (COPY con barra_id, pivote en el cliente, columnas fijas para escribir el
+  CSV por meses), `bloques_varias`, `barras_con_datos`; `informes.cmg_varias` (tope de celdas →
+  sugiere el CSV) y `cmg_todas` (avance por mes); selector con lista de elegidas.
+- Redondeo a 5 decimales en el CSV: el histórico del Maestro trae ruido de 32 bits
+  (107.11000061035156) y el archivo pasaba de 56 a 26,5 MB por mes.
+- Test: la serie ancha es igual, cuarto a cuarto, a la de cada barra por separado.
+
+### 2026-10-15 — Sesión 11: menos ruido en los reportes
+- La opción 4 desde 2024-08-01 repetía 25 avisos históricos de nombres (fecha distinta, etiqueta
+  sin v2…) en cada corrida: 0 críticos, pero el ruido esconde lo nuevo. `revisar_pagina_dia`
+  recibe los documentos ya registrados (`conocidos`, del manifiesto) y solo repite sus
+  **críticos**. Todo hallazgo de un documento lleva `archivo` (pedido del usuario).
+- Receta para otros proyectos: `docs/receta_programa_datos.md` (copiada a `ppa-pipeline/docs`).
+- `publicar-sql` cayó en el servidor real: "could not resize shared memory segment ... No space
+  left on device" (memoria compartida `/dev/shm` chica; probable Docker con 64 MB). La conexión de
+  carga va sin consultas en paralelo (`SIN_PARALELO`), que es lo que usa esa memoria. Arreglo de
+  fondo, del servidor: `shm_size`. Además, el CLI ya no dice "No se pudo conectar" ante un error
+  de la base después de conectar.
+
+### 2026-10-14 — Sesión 10c: la app tardaba un minuto en abrir desde la red
+- Un colaborador "no podía abrirla": tardaba. Medido: desde la red 51–65 s; desde disco local
+  ~2 s (son ~1.700 archivos leídos por SMB). Lanzador `Abrir CMG_Consulta.cmd`: robocopy /MIR a
+  `%LOCALAPPDATA%\CMG_Consulta` y abre la copia; primera vez ~2,5 min (red ~0,6 MB/s), después
+  3–5 s. Si robocopy falla (código ≥ 8), abre el de la red.
+- En la red quedó también `empaquetaruild\...\CMG_Consulta.exe` (intermedio, no funciona).
+
 ### 2026-10-14 — Sesión 10b: filas vacías en Silver 2025-01 (error A20)
 - `publicar-sql` se cayó en 2025-01: 261.755 filas sin barra/fecha/hora en Silver, de líneas de
   relleno `;;;;` en cinco `def` de enero. Datos reales completos. Corregido en la lectura, en el

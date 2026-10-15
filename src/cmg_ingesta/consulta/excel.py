@@ -9,7 +9,7 @@
 - Si una serie no cabe en una hoja (1.048.575 filas), se parte por año.
 """
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from datetime import date, datetime
 from pathlib import Path
 
@@ -35,8 +35,10 @@ ENCABEZADOS = {
     "bloque": "Bloque",
     "cmg_usd_mwh": "CMg [USD/MWh]",
     "es_hora_extra": "Hora extra (abril)",
+    "barra": "Barra",
     "origen": "Origen",
     "version": "Version",
+    "usd_clp": "Tipo de cambio [CLP/USD]",
     "publicado": "Publicado",
     "cargado": "Cargado en la base",
     "periodo": "Periodo",
@@ -84,7 +86,7 @@ def _formato(encabezado: str) -> str | None:
         return _FECHA_HORA
     if encabezado == "Riesgo [%]":
         return _PCT
-    if "[USD/MWh]" in encabezado:
+    if "[USD/MWh]" in encabezado or "[CLP/USD]" in encabezado:
         return _USD
     if encabezado.startswith("Cuartos"):
         return _ENTERO
@@ -102,8 +104,12 @@ def preparar(df: pd.DataFrame) -> pd.DataFrame:
     return salida.rename(columns=ENCABEZADOS)
 
 
-def _dar_formato(hoja: Worksheet) -> None:
-    """Encabezado en negrita y fijo, anchos de columna y formato por columna."""
+def _dar_formato(hoja: Worksheet, usd: Collection[str] = ()) -> None:
+    """Encabezado en negrita y fijo, anchos de columna y formato por columna.
+
+    `usd`: columnas en USD/MWh cuyo nombre no lo dice (en la hoja ancha, cada
+    columna se llama como su barra).
+    """
     hoja.freeze_panes = "A2"
     relleno = PatternFill("solid", fgColor="DDE6F0")
     for celda in hoja[1]:
@@ -113,7 +119,7 @@ def _dar_formato(hoja: Worksheet) -> None:
         encabezado = str(celda.value or "")
         letra = get_column_letter(i)
         hoja.column_dimensions[letra].width = max(10, min(40, len(encabezado) + 2))
-        formato = _formato(encabezado)
+        formato = _USD if encabezado in usd else _formato(encabezado)
         if formato:
             for (c,) in hoja.iter_rows(min_row=2, min_col=i, max_col=i):
                 c.number_format = formato
@@ -137,15 +143,92 @@ def hoja_info(datos: Mapping[str, object]) -> pd.DataFrame:
     return pd.DataFrame({"Concepto": list(datos), "Valor": [texto(v) for v in datos.values()]})
 
 
-def escribir(ruta: Path, hojas: Mapping[str, pd.DataFrame]) -> Path:
+def escribir(
+    ruta: Path,
+    hojas: Mapping[str, pd.DataFrame],
+    usd: Mapping[str, Collection[str]] | None = None,
+) -> Path:
     """Escribe el libro y le da formato. Las hojas vacias no se escriben."""
     with pd.ExcelWriter(ruta, engine="openpyxl") as libro:
         for nombre, df in hojas.items():
             if df.empty:
                 continue
             df.to_excel(libro, sheet_name=nombre[:31], index=False)
-            _dar_formato(libro.sheets[nombre[:31]])
+            _dar_formato(libro.sheets[nombre[:31]], (usd or {}).get(nombre, ()))
     return ruta
+
+
+# ------------------------------------------------------ varias barras, o todas
+
+#: Encabezados de la parte fija de la serie ancha (una columna por barra).
+ENCABEZADOS_ANCHA = {
+    "fecha": "Fecha",
+    "hora": "Hora",
+    "minuto": "Minuto",
+    "fecha_hora": "Fecha y hora",
+    "bloque": "Bloque",
+    "version": "Version",
+    "usd_clp": "Tipo de cambio [CLP/USD]",
+}
+
+
+def libro_varias(
+    ruta: Path,
+    ancha: pd.DataFrame,
+    barras: list[str],
+    bloques: pd.DataFrame,
+    versiones: pd.DataFrame,
+    revisiones: pd.DataFrame,
+    info: Mapping[str, object],
+) -> Path:
+    """Varias barras: el CMg cada 15 minutos con UNA COLUMNA POR BARRA, y los bloques."""
+    hojas = {
+        "CMg 15 min": ancha.rename(columns=ENCABEZADOS_ANCHA),
+        "Bloques por mes": preparar(bloques),
+        "Version por dia": preparar(versiones),
+        "Revisiones": preparar(revisiones),
+        "Info": hoja_info(info),
+    }
+    return escribir(ruta, hojas, usd={"CMg 15 min": set(barras)})
+
+
+def libro_bloques_todas(
+    ruta: Path,
+    bloques: pd.DataFrame,
+    versiones: pd.DataFrame,
+    revisiones: pd.DataFrame,
+    info: Mapping[str, object],
+) -> Path:
+    """Todas las barras: los bloques por mes (el dato cada 15 minutos va en el CSV)."""
+    hojas = {
+        "Bloques por mes": preparar(bloques),
+        "Version por dia": preparar(versiones),
+        "Revisiones": preparar(revisiones),
+        "Info": hoja_info(info),
+    }
+    return escribir(ruta, hojas)
+
+
+def agregar_csv_ancho(ruta: Path, ancha: pd.DataFrame, con_encabezado: bool) -> None:
+    """Agrega un tramo de la serie ancha al CSV. `;` y coma decimal: Excel chileno lo
+    abre con doble clic. Fechas como dd-mm-aaaa, que Excel reconoce como fecha."""
+    tramo = ancha.copy()
+    # 5 decimales, los que publica el Coordinador. El historico del Maestro venia en
+    # 32 bits (107.11000061035156 por 107.11): redondear no pierde nada real, quita
+    # ese ruido y achica el archivo a casi la mitad.
+    barras = [c for c in tramo.columns if c not in ENCABEZADOS_ANCHA]
+    tramo[barras] = tramo[barras].astype("float64").round(5)
+    tramo["fecha"] = pd.to_datetime(tramo["fecha"]).dt.strftime("%d-%m-%Y")
+    tramo["fecha_hora"] = pd.to_datetime(tramo["fecha_hora"]).dt.strftime("%d-%m-%Y %H:%M")
+    tramo.rename(columns=ENCABEZADOS_ANCHA).to_csv(
+        ruta,
+        mode="w" if con_encabezado else "a",
+        header=con_encabezado,
+        index=False,
+        sep=";",
+        decimal=",",
+        encoding="utf-8-sig" if con_encabezado else "utf-8",
+    )
 
 
 def libro_cmg(

@@ -566,3 +566,65 @@ def test_un_mes_con_filas_sin_barra_no_se_publica(
     with pytest.raises(ValueError, match="3 filas sin barra.*ingerir-pagina --mes 2025-01"):
         publicar(con, carga, tmp_path)
     assert pg.meses_en_la_base(carga) == []
+
+
+def test_la_carga_no_usa_consultas_en_paralelo(carga: Conn) -> None:
+    """El servidor tiene poca memoria compartida: sin paralelo no la necesita (2026-10-15)."""
+    assert uno(carga, "SHOW max_parallel_workers_per_gather") == "0"
+    assert uno(carga, "SHOW max_parallel_maintenance_workers") == "0"
+
+
+# ------------------------------------------------- tipo de cambio (2026-10-15)
+
+
+def test_la_carga_guarda_el_tipo_de_cambio_de_cada_dia(
+    con: duckdb.DuckDBPyConnection, carga: Conn, tmp_path: Path
+) -> None:
+    silver = tmp_path / "silver"
+    mes_silver(con, silver, 2025, 3, 50.0, dias=2)
+    archivo = pg.archivo_mes(silver, (2025, 3))
+    nuevo = archivo.with_name("nuevo.parquet")
+    con.execute(
+        f"COPY (SELECT * REPLACE (CAST(900 + day(fecha) AS DOUBLE) AS usd_clp) "
+        f"FROM read_parquet('{archivo}')) TO '{nuevo}' (FORMAT PARQUET)"
+    )
+    nuevo.replace(archivo)
+    publicar(con, carga, tmp_path)
+    filas = carga.execute("SELECT fecha, usd_clp FROM cmg.dia ORDER BY fecha").fetchall()
+    assert filas == [(date(2025, 3, 1), 901.0), (date(2025, 3, 2), 902.0)]
+
+
+def test_sin_tipo_de_cambio_en_silver_queda_vacio(
+    con: duckdb.DuckDBPyConnection, carga: Conn, tmp_path: Path
+) -> None:
+    """El Maestro no lo trae: el dia se carga igual, sin dolar."""
+    mes_silver(con, tmp_path / "silver", 2023, 5, 50.0, dias=1)
+    publicar(con, carga, tmp_path)
+    assert uno(carga, "SELECT count(*) FROM cmg.dia WHERE usd_clp IS NULL") == 1
+
+
+def test_una_base_anterior_recibe_la_columna_al_publicar(
+    con: duckdb.DuckDBPyConnection, base: str, carga: Conn, tmp_path: Path
+) -> None:
+    """Base creada antes del 2026-10-15: no hace falta volver a correr el esquema."""
+    with psycopg.connect(f"{BASE} dbname={base}", autocommit=True) as admin:
+        admin.execute("ALTER TABLE cmg.dia DROP COLUMN usd_clp")
+    mes_silver(con, tmp_path / "silver", 2025, 3, 50.0, dias=1)
+    publicar(con, carga, tmp_path)
+    assert uno(carga, "SELECT count(*) FROM cmg.dia") == 1
+
+
+def test_la_app_no_falla_si_la_base_aun_no_tiene_la_columna(
+    con: duckdb.DuckDBPyConnection, base: str, carga: Conn, tmp_path: Path
+) -> None:
+    """La app nueva instalada antes de publicar: el dolar sale vacio, sin error."""
+    from cmg_ingesta.consulta import datos
+
+    mes_silver(con, tmp_path / "silver", 2025, 3, 50.0, dias=1)
+    publicar(con, carga, tmp_path)
+    with psycopg.connect(f"{BASE} dbname={base}", autocommit=True) as admin:
+        admin.execute("ALTER TABLE cmg.dia DROP COLUMN usd_clp")
+    df = datos.versiones_por_dia(carga, date(2025, 3, 1), date(2025, 3, 1))
+    assert len(df) == 1 and df["usd_clp"].isna().all()
+    serie = datos.serie_cmg(carga, "A.BLANCAS_____013", date(2025, 3, 1), date(2025, 3, 1))
+    assert len(serie) == 96 and serie["usd_clp"].isna().all()

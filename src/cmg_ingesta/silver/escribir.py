@@ -108,8 +108,9 @@ def escribir_particion(
 ) -> int:
     """Escribe el resultado de `consulta` como el mes (anio, mes), de forma atomica.
 
-    `consulta` debe devolver exactamente las columnas de `esquema.columnas_archivo()`
-    y SOLO las filas de ese mes: esta funcion no filtra, confia en la consulta.
+    `consulta` debe devolver las columnas de `esquema.columnas_archivo()` y SOLO las
+    filas de ese mes: esta funcion no filtra, confia en la consulta. Las de
+    `esquema.COLUMNAS_OPCIONALES` (el tipo de cambio) pueden faltar: quedan en NULL.
 
     Reemplaza por completo lo que hubiera en ese mes. Para conservar lo anterior,
     la consulta tiene que incluirlo (ese es el modo "combinar", que se arma en la
@@ -125,7 +126,11 @@ def escribir_particion(
     tmp.mkdir(parents=True, exist_ok=True)
 
     # 2. escribir TODO antes de tocar el destino
-    columnas = esquema.sql_lista_columnas()
+    trae = {str(f[0]) for f in con.execute(f"DESCRIBE SELECT * FROM ({consulta})").fetchall()}
+    columnas = ", ".join(
+        f"CAST(NULL AS {tipo}) AS {c}" if c in esquema.COLUMNAS_OPCIONALES and c not in trae else c
+        for c, tipo in {**esquema.COLUMNAS, **esquema.COLUMNAS_LINAJE}.items()
+    )
     con.execute(
         f"COPY (SELECT {columnas} FROM ({consulta}) ORDER BY barra, fecha, hora, minuto) "
         f"TO {_sql_str(tmp / NOMBRE_ARCHIVO)} (FORMAT PARQUET, COMPRESSION ZSTD)"

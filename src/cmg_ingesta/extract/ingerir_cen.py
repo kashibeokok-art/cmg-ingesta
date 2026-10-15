@@ -192,7 +192,8 @@ def por_mes(
 #: Cambia cuando cambia COMO se leen los ZIP (columnas, nombres). Va en la huella:
 #: asi, al corregir una regla, todos los meses se vuelven a ingerir una vez, solos.
 #: Historial: "2026-10-14" = columnas v2, subcarpetas y _NUEVO (error A19).
-REGLAS = "2026-10-14"
+#: "2026-10-15" = se conserva la columna USD (tipo de cambio) en `usd_clp`.
+REGLAS = "2026-10-15"
 
 
 def huella(dias: list[tuple[date, cen.EntradaManifiesto]]) -> list[str]:
@@ -354,6 +355,13 @@ def _ingerir_mes(
     # los dias cuyo ZIP se reemplazo por su testigo: se copian del Silver anterior
     # ANTES de reescribir el mes (_entrante es una tabla, se lee una sola vez)
     vigentes = _dias_en_silver(con, destino, mes, de_silver)
+    trae: set[str] = set()
+    if vigentes:
+        archivo = _lit(str(_archivo_silver(destino, mes)))
+        trae = {
+            str(f[0])
+            for f in con.execute(f"DESCRIBE SELECT * FROM read_parquet({archivo})").fetchall()
+        }
     for dia, entrada in de_silver:
         if dia not in vigentes:
             omitidos.append(
@@ -361,7 +369,7 @@ def _ingerir_mes(
                 "origen; hay que volver a descargarlo"
             )
             continue
-        consultas.append(_sql_dia_de_silver(destino, mes, dia))
+        consultas.append(_sql_dia_de_silver(destino, mes, dia, trae))
         dias_pre += entrada["tipo"] == "pre"
         entraron.append((dia, entrada))
 
@@ -421,9 +429,16 @@ def _dias_en_silver(
     return {f for f, o1, o2 in filas if o1 == o2 == esperado[f]}
 
 
-def _sql_dia_de_silver(destino: Path, mes: Mes, dia: date) -> str:
-    """El SELECT de un dia tal como esta en Silver: mismas columnas, mismo orden."""
-    columnas = ", ".join(esquema.columnas_archivo())
+def _sql_dia_de_silver(destino: Path, mes: Mes, dia: date, trae: set[str]) -> str:
+    """El SELECT de un dia tal como esta en Silver: mismas columnas, mismo orden.
+
+    `trae` = las columnas del archivo. Uno escrito antes de agregar `usd_clp` no la
+    tiene: va como NULL (con testigo, el ZIP ya no esta para volver a leerla).
+    """
+    columnas = ", ".join(
+        c if c in trae else f"CAST(NULL AS {tipo}) AS {c}"
+        for c, tipo in {**esquema.COLUMNAS, **esquema.COLUMNAS_LINAJE}.items()
+    )
     archivo = _lit(str(_archivo_silver(destino, mes)))
     return f"SELECT {columnas} FROM read_parquet({archivo}) WHERE fecha = DATE '{dia}'"
 

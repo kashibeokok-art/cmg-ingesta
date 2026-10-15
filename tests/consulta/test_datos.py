@@ -160,3 +160,82 @@ def test_la_serie_trae_la_version_en_cada_cuarto(lectura: Conn) -> None:
     assert list(por_dia[date(2025, 3, 2)]) == ["Definitivo v2"]
     riesgo = datos.serie_riesgo(lectura, REF, COMP, date(2025, 3, 2), date(2025, 3, 2))
     assert set(riesgo["version"]) == {"Definitivo v2"}
+
+
+# ------------------------------------------------------ varias barras, o todas
+
+TRES = ["A.BLANCAS_____013", "QUELLON_______013", "STA.ELVIRA____013"]
+
+
+def test_meses_parte_el_rango() -> None:
+    assert datos.meses(date(2025, 3, 20), date(2025, 5, 2)) == [
+        (date(2025, 3, 20), date(2025, 3, 31)),
+        (date(2025, 4, 1), date(2025, 4, 30)),
+        (date(2025, 5, 1), date(2025, 5, 2)),
+    ]
+    assert datos.meses(date(2025, 12, 5), date(2026, 1, 3))[-1] == (
+        date(2026, 1, 1),
+        date(2026, 1, 3),
+    )
+
+
+def test_barras_con_datos(lectura: Conn) -> None:
+    assert datos.barras_con_datos(lectura, *MARZO) == TRES
+    assert datos.barras_con_datos(lectura, date(2020, 1, 1), date(2020, 1, 31)) == []
+
+
+def test_la_serie_ancha_da_lo_mismo_que_cada_barra_por_separado(lectura: Conn) -> None:
+    """Una columna por barra: cada columna tiene que ser la serie de esa barra, cuarto a cuarto."""
+    d1, d2 = date(2025, 4, 4), date(2025, 4, 6)  # incluye el dia de 25 horas
+    ancha = datos.serie_ancha(lectura, None, d1, d2, TRES)
+    assert list(ancha.columns) == datos.CLAVE_ANCHA + TRES
+    assert len(ancha) == 96 + 100 + 96
+    for barra in TRES:
+        una = datos.serie_cmg(lectura, barra, d1, d2)
+        assert list(ancha[barra]) == list(una["cmg_usd_mwh"]), barra
+    assert list(ancha["version"].unique()) == ["Preliminar"]
+    hora_extra = ancha[ancha["hora"] == 24]
+    assert len(hora_extra) == 4 and hora_extra["fecha_hora"].isna().all()
+
+
+def test_la_serie_ancha_de_algunas_barras_y_columnas_fijas(lectura: Conn) -> None:
+    """Una barra pedida que no tiene datos queda como columna vacia, no se cae."""
+    ancha = datos.serie_ancha(
+        lectura,
+        ["QUELLON_______013"],
+        date(2025, 3, 1),
+        date(2025, 3, 1),
+        ["NO_EXISTE", "QUELLON_______013"],
+    )
+    assert list(ancha.columns)[-2:] == ["NO_EXISTE", "QUELLON_______013"]
+    assert ancha["NO_EXISTE"].isna().all() and ancha["QUELLON_______013"].notna().all()
+
+
+def test_la_serie_ancha_de_un_tramo_sin_datos(lectura: Conn) -> None:
+    vacia = datos.serie_ancha(lectura, None, date(2020, 1, 1), date(2020, 1, 2), TRES)
+    assert vacia.empty and list(vacia.columns) == datos.CLAVE_ANCHA + TRES
+
+
+def test_bloques_de_varias_iguales_a_los_de_cada_una(lectura: Conn) -> None:
+    varias = datos.bloques_varias(lectura, None, date(2025, 3, 20), date(2025, 4, 3))
+    assert sorted(varias["barra"].unique()) == TRES
+    for barra in TRES:
+        una = datos.bloques(lectura, barra, date(2025, 3, 20), date(2025, 4, 3))
+        de_varias = varias[varias["barra"] == barra].drop(columns="barra").reset_index(drop=True)
+        assert list(de_varias["periodo"]) == list(una["periodo"])
+        for k in ("A", "B", "C", "Solar", "NoSolar", "Total"):
+            assert list(de_varias[k]) == pytest.approx(list(una[k]), rel=1e-12), (barra, k)
+
+
+# ------------------------------------------------- tipo de cambio (2026-10-15)
+
+
+def test_el_tipo_de_cambio_de_cada_dia(lectura: Conn) -> None:
+    df = datos.versiones_por_dia(lectura, date(2025, 3, 1), date(2025, 3, 3))
+    assert list(df["usd_clp"]) == [901.0, 902.0, 903.0]
+    serie = datos.serie_cmg(lectura, REF, date(2025, 3, 2), date(2025, 3, 2))
+    assert set(serie["usd_clp"]) == {902.0}
+    ancha = datos.serie_ancha(lectura, None, date(2025, 3, 2), date(2025, 3, 2), TRES)
+    assert set(ancha["usd_clp"]) == {902.0}
+    riesgo = datos.serie_riesgo(lectura, REF, COMP, date(2025, 3, 2), date(2025, 3, 2))
+    assert set(riesgo["usd_clp"]) == {902.0}

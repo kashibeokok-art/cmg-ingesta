@@ -17,10 +17,11 @@ def sql_dataset(base: Path) -> str:
     """La expresion SQL que representa toda la base.
 
     `hive_partitioning=true` hace que `anio` y `mes` existan como columnas aunque
-    vivan en el nombre de las carpetas.
+    vivan en el nombre de las carpetas. `union_by_name=true` deja leer juntos meses
+    escritos antes y despues de agregar una columna (`usd_clp`): en los viejos, NULL.
     """
     patron = str(base / "**" / "*.parquet").replace("'", "''")
-    return f"read_parquet('{patron}', hive_partitioning=true)"
+    return f"read_parquet('{patron}', hive_partitioning=true, union_by_name=true)"
 
 
 def base_existe(base: Path) -> bool:

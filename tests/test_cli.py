@@ -657,3 +657,33 @@ def test_ingerir_pagina_con_un_mes_mal_escrito_es_error_de_uso(entorno: Path) ->
     r = runner.invoke(cli.app, ["ingerir-pagina", "--mes", "enero"])
     assert r.exit_code == cli.SALIDA_USO
     assert "AAAA-MM" in r.output
+
+
+def test_publicar_sql_distingue_conectar_de_un_error_de_la_base(
+    entorno: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-10-15: "could not resize shared memory segment" salia como "No se pudo conectar"."""
+    import psycopg
+
+    from cmg_ingesta.publicar import postgres as pg
+
+    (entorno / "data").mkdir()
+    monkeypatch.setenv("CMGI_PG_URL", "postgresql://cmg_carga:x@localhost:1/cmg_cen")
+
+    class Conexion:
+        def __enter__(self) -> "Conexion":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    def lleno(*args: object, **kwargs: object) -> list[pg.ResultadoMes]:
+        raise psycopg.errors.DiskFull("could not resize shared memory segment: No space left")
+
+    monkeypatch.setattr(pg, "conectar", lambda url: Conexion())
+    monkeypatch.setattr(pg, "publicar", lleno)
+    r = runner.invoke(cli.app, ["publicar-sql"])
+
+    assert r.exit_code == cli.SALIDA_ERROR
+    assert "La base rechazo una operacion" in r.stderr
+    assert "No se pudo conectar" not in r.stderr

@@ -32,7 +32,16 @@ COLUMNAS: Final[dict[str, str]] = {
     "cmg_usd_mwh": "DOUBLE",
     "es_hora_extra": "BOOLEAN",  # True solo en la segunda 23:00 del dia largo
     "fecha_hora": "TIMESTAMP",  # NULL cuando es_hora_extra, porque seria ambiguo
+    # Tipo de cambio (CLP por dolar) de la columna USD de los archivos del Coordinador:
+    # uno por dia, igual en todas las barras (medido en 53 dias, 2026-10-15). NULL en
+    # el historico del Maestro, que no lo trae. Pedido del usuario.
+    "usd_clp": "DOUBLE",
 }
+
+#: Columnas que una consulta puede no traer al escribir Silver: quedan en NULL (el
+#: Maestro, los meses escritos antes de que existieran). Cualquier OTRA columna que
+#: falte sigue siendo un error.
+COLUMNAS_OPCIONALES: Final = frozenset({"usd_clp"})
 
 #: Metadatos de linaje (lineage). Permiten responder "de donde salio esta fila".
 #: Van en el archivo, no en la ruta, porque cambian fila a fila cuando un mes se

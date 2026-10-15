@@ -113,7 +113,9 @@ def test_el_mapeo_produce_las_columnas_del_contrato(
     crear_cmg_db_falso(con, tmp_path, [(2023, 5)])
     sql = cmg_db.sql_desde_cmg_db(tmp_path, 2023, 5)
     columnas = [d[0] for d in con.execute(f"DESCRIBE SELECT * FROM ({sql})").fetchall()]
-    assert columnas == esquema.columnas_archivo()
+    # el Maestro no trae el tipo de cambio: es la unica columna que puede faltar
+    obligatorias = [c for c in esquema.columnas_archivo() if c not in esquema.COLUMNAS_OPCIONALES]
+    assert columnas == obligatorias
 
 
 def test_el_mapeo_recalcula_el_bloque(con: duckdb.DuckDBPyConnection, tmp_path: Path) -> None:

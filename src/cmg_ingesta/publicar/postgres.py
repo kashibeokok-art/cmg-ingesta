@@ -71,9 +71,18 @@ def _nada(_mensaje: str) -> None:
 # ------------------------------------------------------------------ apoyo
 
 
+#: Sin consultas en paralelo. Una consulta paralela (agregados, crear el indice)
+#: reparte el trabajo usando memoria compartida (`/dev/shm`), y el servidor de
+#: cmg_cen la tiene chica (Docker da 64 MB por defecto): el 2026-10-15 la carga se
+#: cayo con "could not resize shared memory segment ... No space left on device".
+#: La carga ya es secuencial (mes a mes), asi que el costo es poco. El arreglo de
+#: fondo es del servidor: mas `shm_size` en Docker.
+SIN_PARALELO = "-c max_parallel_workers_per_gather=0 -c max_parallel_maintenance_workers=0"
+
+
 def conectar(url: str) -> psycopg.Connection[tuple[object, ...]]:
     """Conexion en modo autocommit: cada bloque `with conn.transaction()` es explicito."""
-    return psycopg.connect(url, autocommit=True)
+    return psycopg.connect(url, autocommit=True, options=SIN_PARALELO)
 
 
 def huella_archivo(ruta: Path) -> str:
@@ -237,6 +246,30 @@ def asegurar_barras(
         for n, i in conn.execute(consulta, (faltan,)).fetchall():
             existentes[str(n)] = int(str(i))
     return existentes
+
+
+def _usd_por_dia(con: duckdb.DuckDBPyConnection, archivo: Path) -> dict[date, float]:
+    """El tipo de cambio de cada dia del mes de Silver (vacio si el archivo no lo trae)."""
+    trae = {
+        str(f[0])
+        for f in con.execute(f"DESCRIBE SELECT * FROM read_parquet({_lit(archivo)})").fetchall()
+    }
+    if "usd_clp" not in trae:
+        return {}
+    filas = con.execute(
+        f"SELECT fecha, max(usd_clp) FROM read_parquet({_lit(archivo)}) "
+        "WHERE usd_clp IS NOT NULL GROUP BY fecha"
+    ).fetchall()
+    return {f: float(u) for f, u in filas}
+
+
+def asegurar_columnas(conn: psycopg.Connection[tuple[object, ...]]) -> None:
+    """Agrega a una base ya creada las columnas nuevas del esquema (cmg_carga es el dueno).
+
+    Asi una base creada antes del 2026-10-15 recibe `cmg.dia.usd_clp` sin que el
+    administrador tenga que volver a correr sql/cmg_cen.sql.
+    """
+    conn.execute("ALTER TABLE cmg.dia ADD COLUMN IF NOT EXISTS usd_clp double precision")
 
 
 # ------------------------------------------------------------------ cargar
@@ -403,6 +436,7 @@ def publicar_mes(
         f"SELECT list(DISTINCT barra) FROM read_parquet({_lit(archivo)})"
     ).fetchone()
     barras = asegurar_barras(conn, sorted(fila_nombres[0]) if fila_nombres else [])
+    usd = _usd_por_dia(con, archivo)
 
     staging.mkdir(parents=True, exist_ok=True)
     csv = staging / f"{nombre_particion(mes)}.csv"
@@ -520,14 +554,15 @@ def publicar_mes(
         conn.execute("DELETE FROM cmg.dia WHERE fecha >= %s AND fecha < %s", (d1, d2))
         with conn.cursor() as cur:
             cur.executemany(
-                "INSERT INTO cmg.dia (fecha, origen_id, documento, cargado_en) "
-                "VALUES (%s, %s, %s, %s)",
+                "INSERT INTO cmg.dia (fecha, origen_id, documento, cargado_en, usd_clp) "
+                "VALUES (%s, %s, %s, %s, %s)",
                 [
                     (
                         f,
                         o,
                         elegidos[f]["nombre"] if isinstance(f, date) and f in elegidos else None,
                         ahora,
+                        usd.get(f) if isinstance(f, date) else None,
                     )
                     for f, o in dias
                 ],
@@ -588,6 +623,7 @@ def publicar(
                     f"{periodo.formatear(viejos[-1])}). No se tocan; para borrarlos: "
                     "cmg publicar-sql --quitar-anteriores"
                 )
+    asegurar_columnas(conn)
     pendientes = meses_pendientes(silver, meses_cargados(conn), forzar, desde)
     if not pendientes:
         avisar("La base ya refleja Silver: nada que subir.")

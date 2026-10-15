@@ -57,6 +57,12 @@ COLUMNAS_POSIBLES = {
 }
 
 
+def _cabecera(csv: Path) -> list[str]:
+    """Los nombres de columna de la primera linea del CSV."""
+    with csv.open("rb") as f:
+        return f.readline().decode("latin-1").strip().split(";")
+
+
 def columna_valor(csv: Path, tipo: str) -> str:
     """La columna del CMg en ESTE csv, mirando su encabezado (regla 1).
 
@@ -67,9 +73,7 @@ def columna_valor(csv: Path, tipo: str) -> str:
     posicion y no por etiqueta: `pre-v2_250228` trae el orden al reves
     (`PRE v2, DEF v2, PRE, DEF`) y ahi lo revisado es la columna SIN "v2".
     """
-    with csv.open("rb") as f:
-        cab = f.readline().decode("latin-1").strip().split(";")
-    candidatas = [c for c in cab if COLUMNAS_POSIBLES[tipo].match(c)]
+    candidatas = [c for c in _cabecera(csv) if COLUMNAS_POSIBLES[tipo].match(c)]
     if not candidatas:
         raise ValueError(f"{csv.name}: no trae {COLUMNA_VALOR[tipo]} ni {COLUMNA_VALOR_2024[tipo]}")
     return candidatas[-1]
@@ -150,13 +154,18 @@ def sql_crudo_un_dia(csv: Path, tipo: str) -> str:
     lineas asi, como un export de Excel: 52.351 lineas de relleno cada uno, que
     entraban a Silver como filas nulas (2026-10-14). Una fila con datos pero sin
     barra NO se descarta: eso si es un problema, y la validacion lo reporta.
+
+    `usd_clp` es la columna USD (CLP por dolar, uno por dia): '956.58' o
+    '1007.51000'. Si un formato futuro no la trae, queda NULL en vez de fallar.
     """
+    usd = "TRY_CAST(replace(USD, ',', '.') AS DOUBLE)" if "USD" in _cabecera(csv) else "NULL"
     return f"""
         SELECT BARRA AS barra,
                CAST(strptime(FECHA, '%Y%m%d') AS DATE) AS fecha,
                CAST(HORA AS UTINYINT) AS hora,
                CAST(MINUTO AS UTINYINT) AS minuto,
-               CAST("{columna_valor(csv, tipo)}" AS DOUBLE) AS cmg_usd_mwh
+               CAST("{columna_valor(csv, tipo)}" AS DOUBLE) AS cmg_usd_mwh,
+               CAST({usd} AS DOUBLE) AS usd_clp
         FROM read_csv({_lit(csv)}, delim=';', header=true, all_varchar=true)
         WHERE NOT (BARRA IS NULL AND FECHA IS NULL AND HORA IS NULL)
     """
@@ -177,6 +186,7 @@ def sql_un_dia(csv: Path, dia: date, tipo: str) -> str:
                          + to_hours(CAST(hora AS BIGINT))
                          + to_minutes(CAST(minuto AS BIGINT))
                     ELSE NULL END AS fecha_hora,
+               usd_clp,
                '{ORIGEN_POR_TIPO[tipo]}' AS origen,
                now()::TIMESTAMP AS ingerido_en
         FROM ({sql_crudo_un_dia(csv, tipo)})

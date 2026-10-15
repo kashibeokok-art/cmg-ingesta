@@ -55,7 +55,8 @@ def test_modo_prueba_sin_ventana(
     salida = tmp_path / "salida"
     args = ["STA.ELVIRA____013", "A.BLANCAS_____013", "01-03-2025", "05-03-2025", str(salida)]
     assert ventana.prueba(args) == 0
-    assert (salida / "prueba_cmg.xlsx").exists() and (salida / "prueba_riesgo.xlsx").exists()
+    for archivo in ("cmg.xlsx", "riesgo.xlsx", "varias.xlsx", "todas.csv", "todas_bloques.xlsx"):
+        assert (salida / f"prueba_{archivo}").exists(), archivo
     assert ventana.prueba(["NO_EXISTE", *args[1:]]) == 1
     assert "no tiene datos" in (salida / "prueba.log").read_text(encoding="utf-8")
 
@@ -94,6 +95,14 @@ def test_la_ventana_se_conecta_y_busca(datos_prueba: tuple[str, Path]) -> None:
         lista = next(w for w in _todos(raiz) if isinstance(w, tk.Listbox))
         assert str(lista.get(0)).startswith("STA.ELVIRA____013")
         assert "%" in str(lista.get(0))
-        assert any(t == "Elegida: (ninguna)" for t in _textos(raiz))  # no elige sola
+        assert "Elegidas: 0" in _textos(raiz)  # no elige sola
+
+        # se agrega a mano: seleccionar y Enter (lo mismo que el doble clic)
+        lista.selection_set(0)
+        lista.focus_force()
+        lista.event_generate("<Return>")
+        raiz.update()
+        assert "Elegidas: 1" in _textos(raiz)
+        assert "ya elegida" in str(lista.get(0))
     finally:
         raiz.destroy()

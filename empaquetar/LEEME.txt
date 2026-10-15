@@ -3,18 +3,32 @@ CMG_Consulta - Costos marginales por barra del SEN
 
 Como usarlo
 -----------
-1. Doble clic en CMG_Consulta.exe. Arriba dice el rango de datos disponible.
-2. Pestana "CMg de una barra":
+1. Doble clic en "Abrir CMG_Consulta.cmd" (no en el .exe de la carpeta).
+   La primera vez copia el programa a tu equipo: 2 o 3 minutos, con una ventana negra
+   que avisa. Despues abre en pocos segundos. Abrir el .exe directo desde la red
+   tambien funciona, pero tarda alrededor de un minuto cada vez.
+   Cuando aparece la ventana, arriba dice el rango de datos disponible.
+2. Pestana "CMg por barra":
    - Escribe parte del nombre de la barra (ej. "santa elvira 13", "cerro navia 220").
-     Aparecen las 10 mas parecidas con su porcentaje: haz clic en la que quieres.
+     Aparecen las 10 mas parecidas con su porcentaje. Doble clic (o "Agregar") la pasa a
+     la lista de Elegidas. Puedes agregar varias; "Quitar" las saca.
+   - O marca "Todas las barras".
    - Escribe las fechas desde y hasta (dd-mm-aaaa) o usa un boton de rango.
-   - "Descargar Excel" y elige donde guardarlo (por defecto, tu carpeta Descargas).
+   - "Descargar" y elige donde guardar (por defecto, tu carpeta Descargas):
+       1 barra  -> Excel con el CMg cada 15 minutos y los bloques.
+       Varias   -> Excel con el CMg en UNA COLUMNA POR BARRA y los bloques de cada una.
+       Todas    -> CSV con una columna por barra (~27 MB por mes) + Excel con los bloques.
+                   El CSV usa ';' y coma decimal: abre con doble clic en Excel. Un mes abre
+                   bien; un ano completo es pesado para Excel (mejor Power BI o por partes).
+   - Una celda vacia significa que esa barra no tiene dato ese cuarto (no es cero).
 3. Pestana "Riesgo nodal": igual, eligiendo la barra de referencia y la comparada.
    Riesgo = CMg(comparada) - CMg(referencia); positivo = la comparada es mas cara.
 
 Que trae el Excel
 -----------------
-- CMg cada 15 minutos, con la version de cada dia (Definitivo v2, Preliminar v1...).
+- CMg cada 15 minutos, con la version de cada dia (Definitivo v2, Preliminar v1...) y el
+  tipo de cambio del dia (CLP por dolar, la columna USD del Coordinador; vacio antes de
+  agosto 2024, porque el historico no lo trae).
 - Promedios por bloque (A, B, C, Solar, NoSolar, Total) por mes y del rango completo.
 - Version por dia: que documento del Coordinador hay cargado y cuando se publico.
 - Revisiones: los dias que el Coordinador corrigio despues de cargados, y cuanto.

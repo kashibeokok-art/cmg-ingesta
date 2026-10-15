@@ -116,6 +116,9 @@ CREATE TABLE IF NOT EXISTS cmg.dia (
     documento   text REFERENCES cmg.documento,   -- NULL para el Maestro
     cargado_en  timestamptz NOT NULL
 );
+-- Tipo de cambio del dia (CLP por dolar): la columna USD de los archivos del
+-- Coordinador, uno por dia. NULL en el historico del Maestro, que no lo trae.
+ALTER TABLE cmg.dia ADD COLUMN IF NOT EXISTS usd_clp double precision;
 
 -- Historial: una fila cada vez que un dia YA cargado cambio de version, con
 -- cuanto cambio el CMg. Es lo que responde "que se reviso y cuando".

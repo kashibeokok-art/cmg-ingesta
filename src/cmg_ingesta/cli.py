@@ -552,9 +552,15 @@ def publicar_sql(
             err=True,
         )
         raise typer.Exit(SALIDA_ERROR)
+    try:
+        conn = pg.conectar(cfg.pg_url.get_secret_value())
+    except psycopg.OperationalError as e:
+        # el mensaje de psycopg no trae la clave; la URL no se imprime
+        typer.echo(f"No se pudo conectar a PostgreSQL: {str(e).strip()}", err=True)
+        raise typer.Exit(SALIDA_ERROR) from e
     con = _conectar(cfg)
     try:
-        with pg.conectar(cfg.pg_url.get_secret_value()) as conn:
+        with conn:
             resultados = pg.publicar(
                 con,
                 conn,
@@ -566,12 +572,17 @@ def publicar_sql(
                 desde=desde,
                 quitar=quitar_anteriores,
             )
-    except psycopg.OperationalError as e:
-        # el mensaje de psycopg no trae la clave; la URL no se imprime
-        typer.echo(f"No se pudo conectar a PostgreSQL: {str(e).strip()}", err=True)
-        raise typer.Exit(SALIDA_ERROR) from e
     except psycopg.errors.UndefinedTable as e:
         typer.echo("La base no tiene el esquema: corre antes sql/cmg_cen.sql.", err=True)
+        raise typer.Exit(SALIDA_ERROR) from e
+    except psycopg.Error as e:
+        # conectada, pero la base rechazo una operacion: el mes en curso se deshizo entero
+        typer.echo(
+            f"La base rechazo una operacion: {str(e).strip()}\n"
+            "El mes en curso no quedo a medias (se deshizo). Lo ya subido queda; para "
+            "retomar, vuelve a correr el mismo comando.",
+            err=True,
+        )
         raise typer.Exit(SALIDA_ERROR) from e
     except ValueError as e:
         typer.echo(f"Error: {e}", err=True)

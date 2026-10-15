@@ -4,6 +4,7 @@
 # Excepciones: scripts propios de Windows necesitan CRLF
 *.ps1 text eol=crlf
 *.bat text eol=crlf
+*.cmd text eol=crlf
 
 # Binarios: nunca convertir
 *.parquet binary

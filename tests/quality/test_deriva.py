@@ -871,3 +871,43 @@ def test_el_reporte_agrupa_y_dice_cada_archivo(tmp_path: Path) -> None:
         "b_250202.zip",
         "c_250203.zip",
     ]
+
+
+# ================================== avisos de nombre: solo la primera vez (2026-10-15)
+
+
+def test_un_documento_ya_registrado_no_repite_sus_avisos_de_nombre() -> None:
+    """El barrido completo repetia 25 avisos historicos en cada opcion 4."""
+    dia = date(2026, 1, 15)
+    nombre = "Antecedentes_CMG_Real_def_260116.zip"  # otra fecha en el nombre
+    pagina = _pagina_con(UP + nombre)
+    docs = cen.parsear_documentos(pagina, dia)
+
+    nuevo = deriva.revisar_pagina_dia(dia, pagina, docs)
+    ya_bajado = deriva.revisar_pagina_dia(dia, pagina, docs, conocidos={nombre})
+
+    assert "fecha_del_nombre_distinta" in tipos(nuevo)
+    assert ya_bajado == []
+
+
+def test_un_critico_se_repite_aunque_el_documento_este_registrado() -> None:
+    """Mientras siga el critico, ese dia no entra a Silver: no se puede callar."""
+    dia = date(2026, 1, 15)
+    nombre = "Antecedentes_CMG_Real_def_260115_final.zip"
+    pagina = _pagina_con(UP + nombre, etiqueta="Algo")
+    docs = cen.parsear_documentos(pagina, dia)
+    h = deriva.revisar_pagina_dia(dia, pagina, docs, conocidos={nombre})
+    assert {x["tipo"] for x in h} == {"nombre_no_catalogado"}
+    assert severidad_de(h, "nombre_no_catalogado") == "critico"
+
+
+def test_los_hallazgos_de_la_pagina_dicen_el_zip() -> None:
+    """Pedido del usuario: la columna Archivo del reporte no puede quedar en blanco."""
+    dia = date(2026, 1, 15)
+    pagina = _pagina_con(UP + "Antecedentes_CMG_Real_def_260116.zip") + _pagina_con(
+        UP + "Otro_Producto_260115.zip"
+    )
+    h = deriva.revisar_pagina_dia(dia, pagina, cen.parsear_documentos(pagina, dia))
+    archivos = {x["tipo"]: x.get("archivo") for x in h}
+    assert archivos["fecha_del_nombre_distinta"] == "Antecedentes_CMG_Real_def_260116.zip"
+    assert archivos["archivo_no_cmg_en_pagina"] == "Otro_Producto_260115.zip"

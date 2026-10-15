@@ -1,7 +1,7 @@
 # cmg-ingesta
 
 Base de costos marginales (CMg) cuarto-horarios por barra del Sistema Eléctrico Nacional de
-Chile, con las consultas y exportes que se usan para análisis de pricing.
+Chile, con las consultas y exportes.
 
 Almacenamiento en Parquet particionado + DuckDB. **201,8 millones de filas en 213 MB**, con
 consultas de un mes en menos de un segundo.
@@ -34,8 +34,6 @@ usaba. Si siguen en un `.env` viejo, el programa no arranca hasta comentarlas o 
 - **La carpeta de datos no se crea sola**, ni siquiera al descargar: si la ruta estuviera mal
   escrita, ~23 GB irían a una carpeta equivocada. En un equipo nuevo, créala una vez con
   `mkdir data`.
-
-`.env` nunca va a git. `.env.example` sí, y por eso **no lleva valores**.
 
 ## Usar
 
@@ -100,7 +98,7 @@ uv run cmg ingerir-pagina
 #    preliminares que llevan más de 25 días sin definitivo, revisiones sin bajar
 uv run cmg vigilar-fuente
 ```
-
+                                                            
 **Bronze o Silver en otra carpeta** (por ejemplo en la red): `CMGI_BRONZE_DIR` y
 `CMGI_SILVER_DIR` en el `.env` son las carpetas finales (Bronze: los ZIP y `manifiesto.json`;
 Silver: `anio=…/mes=…`). Tienen que existir: si la red no está conectada o la ruta está mal, el
@@ -190,12 +188,23 @@ powershell -File empaquetar/construir_consulta.ps1   # arma empaquetar/dist/CMG_
 uv run cmg-consulta                                  # la misma ventana, en desarrollo
 ```
 
-Para instalarla: copiar la carpeta `CMG_Consulta` a la carpeta compartida y, junto al `.exe`,
+Para instalarla: copiar el **contenido** de `empaquetar/dist` (`Abrir CMG_Consulta.cmd`,
+`LEEME.txt` y la carpeta `CMG_Consulta`) a la carpeta compartida y, dentro de `CMG_Consulta`,
 crear `conexion.ini` desde `conexion.ini.example` con la clave de `cmg_lectura` (no se versiona).
+Los usuarios abren **`Abrir CMG_Consulta.cmd`**: copia la app a `%LOCALAPPDATA%\CMG_Consulta`
+(solo lo que cambió) y abre esa copia. Medido: el `.exe` directo desde la red tarda 51–65 s en
+mostrar la ventana (lee ~1.700 archivos por la red); con el lanzador, ~2,5 min la primera vez y
+3–5 s las siguientes. Una versión nueva en la red llega sola en la próxima apertura.
 El Excel trae: CMg 15 min con la versión de cada día ("Definitivo v2"), bloques por mes y del
 rango (A, B, C, Solar, NoSolar, Total), estadísticas por bloque, versión por día, revisiones del
 rango e Info (avisa si hay días preliminares). Un test exige que los bloques y el riesgo den lo
 mismo que el Gold del programa; con datos reales de 2022-12 la diferencia es 0.
+
+Una, varias o todas las barras: la búsqueda agrega cada barra a una lista de elegidas (nunca
+elige sola). Varias → Excel con el CMg en una columna por barra (tope ~2 millones de celdas);
+todas → CSV ancho (una columna por barra, `;` y coma decimal, 5 decimales, ~27 MB por mes,
+escrito mes a mes) + Excel con los bloques de todas. Medido en la base de demostración: un mes
+de las 1.436 barras en ~30 s (base local).
 
 Diagnóstico sin ventana: `CMG_Consulta.exe --prueba BARRA REFERENCIA dd-mm-aaaa dd-mm-aaaa
 CARPETA` escribe los dos Excel y `prueba.log` en CARPETA.
@@ -294,6 +303,9 @@ uv run ruff format .   # formateo
   prácticos ejecutables
 - [`docs/errores_verificados.md`](docs/errores_verificados.md) — errores ya cometidos, con la
   evidencia que los desmintió
+- [`docs/receta_programa_datos.md`](docs/receta_programa_datos.md) — la receta para construir
+  un programa como este (fuente → Bronze → Silver → Gold → base → app), con cada error como regla;
+  §14 la aplica a `ppa-pipeline`
 - [`CLAUDE.md`](CLAUDE.md) — memoria del proyecto: alcance, fuentes, decisiones y bitácora
 - [`docs/consulta_cen_dst.md`](docs/consulta_cen_dst.md) — la consulta pendiente al CEN sobre
   los días de cambio de hora

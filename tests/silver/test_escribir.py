@@ -220,3 +220,34 @@ def test_limpiar_borra_un_mes_viejo_que_sobra(
     assert escribir.limpiar_temporales(tmp_path) == 1
     assert list(tmp_path.rglob(f"*{escribir.SUFIJO_VIEJO}")) == []
     assert escribir.filas_en_particion(con, tmp_path, 2025, 3) == 10
+
+
+def test_sin_tipo_de_cambio_la_columna_queda_vacia(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
+    """El Maestro no trae usd_clp: se escribe igual, con la columna en NULL."""
+    escribir.escribir_particion(con, consulta_falsa(3), tmp_path, 2025, 3)
+    archivo = escribir.ruta_particion(tmp_path, 2025, 3) / escribir.NOMBRE_ARCHIVO
+    fila = con.execute(f"SELECT count(*), count(usd_clp) FROM read_parquet('{archivo}')").fetchone()
+    assert fila == (3, 0)
+
+
+def test_meses_con_y_sin_tipo_de_cambio_se_leen_juntos(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
+    """Un mes escrito antes de existir la columna convive con uno nuevo."""
+    from cmg_ingesta.silver import leer
+
+    viejo = escribir.ruta_particion(tmp_path, 2025, 2)
+    viejo.mkdir(parents=True)
+    con.execute(
+        f"COPY ({consulta_falsa(2)}) "  # sin usd_clp, como los meses ya escritos
+        f"TO '{viejo / escribir.NOMBRE_ARCHIVO}' (FORMAT PARQUET)"
+    )
+    escribir.escribir_particion(
+        con, f"SELECT *, 950.5 AS usd_clp FROM ({consulta_falsa(2)})", tmp_path, 2025, 3
+    )
+    filas = con.execute(
+        f"SELECT mes, count(usd_clp) FROM {leer.sql_dataset(tmp_path)} GROUP BY mes ORDER BY mes"
+    ).fetchall()
+    assert filas == [(2, 0), (3, 2)]

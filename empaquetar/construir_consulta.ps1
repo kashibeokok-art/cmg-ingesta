@@ -1,6 +1,7 @@
-# Arma la carpeta CMG_Consulta (ejecutable + LEEME + conexion.ini de ejemplo).
+﻿# Arma la carpeta CMG_Consulta (ejecutable + LEEME + conexion.ini de ejemplo).
 # Uso, desde la carpeta cmg-ingesta:   powershell -File empaquetar/construir_consulta.ps1
-# Resultado: empaquetar/dist/CMG_Consulta/  -> copiar entera a la carpeta compartida.
+# Resultado: empaquetar/dist/ con "Abrir CMG_Consulta.cmd" y la carpeta CMG_Consulta.
+# Se copia el CONTENIDO de empaquetar/dist a la carpeta compartida (no build/).
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)
 
@@ -21,4 +22,7 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller fallo (codigo $LASTEXITCODE): no s
 $destino = "empaquetar/dist/CMG_Consulta"
 Copy-Item empaquetar/LEEME.txt $destino -Force
 Copy-Item empaquetar/conexion.ini.example $destino -Force
-Write-Host "Listo: $destino"
+# el lanzador va AL LADO de la carpeta: copia la app al equipo y abre esa copia
+Copy-Item "empaquetar/Abrir CMG_Consulta.cmd" empaquetar/dist -Force
+Copy-Item empaquetar/LEEME.txt empaquetar/dist -Force
+Write-Host "Listo: empaquetar/dist (Abrir CMG_Consulta.cmd + CMG_Consulta/)"

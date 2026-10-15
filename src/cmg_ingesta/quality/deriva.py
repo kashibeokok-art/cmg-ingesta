@@ -34,7 +34,7 @@ import re
 import time
 import zipfile
 from collections import Counter
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Collection, Iterable, Iterator
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Literal, NotRequired, TypedDict
@@ -287,8 +287,21 @@ def _aammdd(d: date) -> str:
     return d.strftime("%y%m%d")
 
 
-def revisar_pagina_dia(dia: date, html: str, docs: list[cen.Documento]) -> list[Hallazgo]:
-    """Busca en la pagina de un dia cosas que el parser no conoce."""
+def revisar_pagina_dia(
+    dia: date,
+    html: str,
+    docs: list[cen.Documento],
+    conocidos: Collection[str] = frozenset(),
+) -> list[Hallazgo]:
+    """Busca en la pagina de un dia cosas que el parser no conoce.
+
+    `conocidos`: los documentos ya registrados (el manifiesto). Sus rarezas de nombre
+    se avisaron cuando se bajaron; repetirlas en cada barrido completo es ruido
+    (25 avisos iguales en cada opcion 4 desde 2024-08-01) que esconde lo nuevo. Los
+    CRITICOS se repiten siempre: mientras sigan, ese dia no entra a Silver.
+
+    Cada hallazgo de un documento lleva `archivo` = su nombre (pedido del usuario).
+    """
     hallazgos: list[Hallazgo] = []
     url = cen.url_dia(dia) if dia.year in cen.SUFIJO else f"(dia {dia})"
 
@@ -315,20 +328,20 @@ def revisar_pagina_dia(dia: date, html: str, docs: list[cen.Documento]) -> list[
     for otro in sorted(zips_en_pagina - urls_cmg):
         if not docs:
             break  # ya cubierto arriba
-        hallazgos.append(
-            _h(
-                "info",
-                "archivo_no_cmg_en_pagina",
-                f"La pagina del {dia} publica un ZIP que no es CMg Real.",
-                otro,
-                "Revisar si es un producto nuevo que interese. No se descarga.",
-            )
+        h = _h(
+            "info",
+            "archivo_no_cmg_en_pagina",
+            f"La pagina del {dia} publica un ZIP que no es CMg Real.",
+            otro,
+            "Revisar si es un producto nuevo que interese. No se descarga.",
         )
+        h["archivo"] = otro.rsplit("/", 1)[-1]
+        hallazgos.append(h)
 
     for d in docs:
-        hallazgos += _revisar_nombre_y_etiqueta(dia, d)
+        del_doc = _revisar_nombre_y_etiqueta(dia, d)
         if d["fecha_publicacion"] is None:
-            hallazgos.append(
+            del_doc.append(
                 _h(
                     "aviso",
                     "fecha_publicacion_no_encontrada",
@@ -339,6 +352,11 @@ def revisar_pagina_dia(dia: date, html: str, docs: list[cen.Documento]) -> list[
                     "Recapturar el fixture y compararlo con el guardado.",
                 )
             )
+        if d["nombre"] in conocidos:
+            del_doc = [h for h in del_doc if h["severidad"] == "critico"]
+        for h in del_doc:
+            h["archivo"] = d["nombre"]
+        hallazgos += del_doc
     return hallazgos
 
 
@@ -947,8 +965,11 @@ def sincronizar_vigilando(
     ahora = datetime.now(UTC)
     raros: list[no_reconocidos.Enlace] = []
 
+    # lo ya registrado ANTES de esta corrida: sus rarezas de nombre ya se avisaron
+    conocidos = frozenset(cen.leer_manifiesto(carpeta))
+
     def al_leer_pagina(dia: date, html: str, docs: list[cen.Documento]) -> None:
-        hallazgos.extend(revisar_pagina_dia(dia, html, docs))
+        hallazgos.extend(revisar_pagina_dia(dia, html, docs, conocidos))
         raros.extend(no_reconocidos.detectar(html, dia))
         if avisar:
             avisar(f"  {dia}  {len(docs)} archivo(s) publicado(s)")
@@ -1196,6 +1217,7 @@ def vigilar_fuente(
 
     con_documentos = 0
     raros: list[no_reconocidos.Enlace] = []
+    conocidos = frozenset(cen.leer_manifiesto(carpeta))
     for dia in cen.dias_entre(desde, hasta):
         time.sleep(pausa)
         html = cen.obtener_pagina_dia(dia, sesion, timeout, slugs)
@@ -1203,7 +1225,7 @@ def vigilar_fuente(
             continue
         docs = cen.parsear_documentos(html, dia)
         con_documentos += bool(docs)
-        hallazgos += revisar_pagina_dia(dia, html, docs)
+        hallazgos += revisar_pagina_dia(dia, html, docs, conocidos)
         raros += no_reconocidos.detectar(html, dia)
     hallazgos += _registrar_no_reconocidos(carpeta, raros)
 
