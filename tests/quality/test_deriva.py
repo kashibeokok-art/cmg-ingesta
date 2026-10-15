@@ -306,10 +306,11 @@ def test_si_falta_el_comparativo_es_critico() -> None:
     assert severidad_de(h, "falta_archivo_requerido") == "critico"
 
 
-def test_si_falta_un_archivo_opcional_es_aviso() -> None:
+def test_si_falta_un_archivo_opcional_es_informativo() -> None:
+    """No se usa para el CMg: un aviso que se repite en cada corrida es solo ruido."""
     sin = [m for m in MIEMBROS_REALES if not m.startswith("Fpen_")]
     h = deriva.revisar_miembros(sin)
-    assert severidad_de(h, "falta_archivo_opcional") == "aviso"
+    assert severidad_de(h, "falta_archivo_opcional") == "info"
 
 
 # ================================================================ encabezado
@@ -911,3 +912,46 @@ def test_los_hallazgos_de_la_pagina_dicen_el_zip() -> None:
     archivos = {x["tipo"]: x.get("archivo") for x in h}
     assert archivos["fecha_del_nombre_distinta"] == "Antecedentes_CMG_Real_def_260116.zip"
     assert archivos["archivo_no_cmg_en_pagina"] == "Otro_Producto_260115.zip"
+
+
+# ================================ variantes del reporte deriva_20261015_170107
+
+
+def _con(reemplazo: str, prefijo: str) -> list[str]:
+    return [m for m in MIEMBROS_REALES if not m.startswith(prefijo)] + [reemplazo]
+
+
+@pytest.mark.parametrize(
+    ("archivo", "prefijo"),
+    [
+        ("Fpen_20241208_MOD_def.xlsx", "Fpen_"),  # def_241208_v2
+        ("Fpen_20250101_def.xlsx", "Fpen_"),  # def_250101
+        ("CMgxBarraMinuto_20250603.zip", "CMgBarrasMinuto_"),  # def_250603
+        ("CMgxBarraMinuto_20241022.csv", "CMgBarrasMinuto_"),  # def_241022
+        ("CMgxBarraMinuto_20250101_20250101.zip", "CMgBarrasMinuto_"),
+        ("Fpen_Reales_240814.xlsx", "Fpen_"),  # pre_240814
+        ("Barras_Subsistemas_20250101_P.xlsx", "Barras_Subsistemas_"),
+    ],
+)
+def test_otras_formas_reales_de_fpen_y_minuto(archivo: str, prefijo: str) -> None:
+    assert deriva.revisar_miembros(_con(archivo, prefijo)) == []
+
+
+@pytest.mark.parametrize(
+    "anexo",
+    [
+        "DesignacionCentrales_SD1_20240926.xlsx",
+        "Antecedentes_CMG_Real_def/DesignacionCentrales_SD1_20250829.xlsx",
+        "Profundidad Costo de Falla 25 y 26 F.xlsx",
+        "Cálculo CF Racionamiento Hualañé - Los Maquis.xlsx",
+        "ValorDolar_2025.xlsx",
+        "R_CMg_RIO250101_MOD_AM.xlsx",
+    ],
+)
+def test_los_anexos_conocidos_no_se_reportan(anexo: str) -> None:
+    assert deriva.revisar_miembros([*MIEMBROS_REALES, anexo]) == []
+
+
+def test_un_archivo_realmente_desconocido_se_sigue_reportando() -> None:
+    h = deriva.revisar_miembros([*MIEMBROS_REALES, "CmgOtraCosa_20260101.csv"])
+    assert tipos(h) == {"archivo_nuevo_en_zip"}

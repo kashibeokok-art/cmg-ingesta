@@ -515,6 +515,13 @@ barra, y el hueco de septiembre no aparece (consistente con RN-03, que no lo con
 
 ### 4.5.4 🔴 El caso espejo: septiembre inventa una hora a precio cero
 
+> **Actualizado 2026-10-15 (con los 1.779 ZIP):** el comportamiento **varía por año**. El
+> 2024-09-08 y el 2025-09-07 el archivo **no** trae la hora que no existió (92 cuartos); el
+> 2026-09-06 (def v2) **sí** la trae en 0. La ingesta funciona igual en los dos casos: si viene,
+> la descarta. Además, el 2025-09-07 cinco barras (JADRESIC 220, LALACKAMA 033/220, PETALTAL
+> 033/220) vienen **sin la hora 01:00** en el archivo del Coordinador (88 cuartos): es un hueco de
+> la fuente, el aviso `barras_con_otro_largo` es correcto y Silver no inventa esos cuartos.
+
 En septiembre el reloj **se adelanta** (salta de 00:00 a 01:00 del domingo), así que ese día tiene
 **23 horas = 92 cuartos**. Verificado con `zoneinfo("America/Santiago")`: el día de 23 horas es
 siempre **domingo** (2021-09-05, 2022-09-11, 2023-09-03, 2024-09-08, 2025-09-07) y la hora que
@@ -804,6 +811,15 @@ Leyenda: `[ ]` pendiente · `[~]` en curso · `[x]` hecho
   (pedido del usuario: "los documentos pueden tener varias revisiones").
 
 ## 8. Bitácora
+
+### 2026-10-15 — Sesión 11d: alertas de la reingesta completa
+- Reporte `deriva_20261015_170107` (0 críticos, 12 avisos, 27 info). Catálogo ampliado con las
+  formas reales que faltaban: `Fpen_AAAAMMDD[_MOD][_def]`, `Fpen_Reales_AAMMDD`,
+  `CMgxBarraMinuto_…`, `Barras_Subsistemas_…_P`; `ANEXOS_CONOCIDOS` (DesignacionCentrales,
+  Costo de Falla, Racionamiento, ValorDolar, R_CMg_…) no se reportan. `falta_archivo_opcional`
+  pasa a **info** (no se usa para el CMg). Mensaje de hora fantasma corregido (varía por año).
+- Sobre los 1.779 ZIP: 0 archivos desconocidos; quedan 13 info reales (Excel opcional ausente) y
+  el aviso correcto del hueco de la fuente del 2025-09-07 (§4.5.4).
 
 ### 2026-10-15 — Sesión 11c: se conserva el tipo de cambio (columna USD)
 - Pedido del usuario: conservar la columna USD de los archivos del Coordinador. Medido en 53 días

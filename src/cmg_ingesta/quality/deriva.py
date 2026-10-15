@@ -84,10 +84,34 @@ MIEMBROS_ZIP: list[tuple[str, re.Pattern[str], bool]] = [
     # y en 148 de 211 ZIP de 2024-09..2025-01 (medido el 2026-10-13, error A18). Ademas
     # del _R (definitivo) y el _P (preliminar) existe el _E (en linea): pre_240911.zip
     ("promedios", re.compile(r"^PromediosBarras_?\d{8}_\d{8}_[RPE]\.csv$"), True),
-    ("minuto", re.compile(r"^CMgBarrasMinuto_\d{8}_\d{8}\.zip$"), False),
-    ("fpen", re.compile(r"^Fpen_(\d{8}|Reales_\d{6}_MOD_\w+)\.xlsx$"), False),
+    # tambien "CMgxBarraMinuto_AAAAMMDD[_...].zip|.csv" (def_241022, def_250603; 2026-10-15)
+    (
+        "minuto",
+        re.compile(
+            r"^(CMgBarrasMinuto_\d{8}_\d{8}\.zip|CMgxBarraMinuto_\d{8}(_\d{6,8})?\.(zip|csv))$"
+        ),
+        False,
+    ),
+    # Fpen_AAAAMMDD, Fpen_Reales_AAMMDD[_MOD_def] y, desde 2024-12, Fpen_AAAAMMDD_MOD_def
+    # y Fpen_AAAAMMDD_def (def_241208_v2, def_250101, pre_240814; 2026-10-15)
+    (
+        "fpen",
+        re.compile(r"^Fpen_(\d{8}(_MOD)?(_(def|pre))?|Reales_\d{6}(_MOD_\w+)?)\.xlsx$"),
+        False,
+    ),
     ("fpen_mapeo", re.compile(r"^FPen_Mapeo_Barras\.xlsx$"), False),
-    ("subsistemas", re.compile(r"^Barras_Subsistemas_\d{8}\.xlsx$"), False),
+    ("subsistemas", re.compile(r"^Barras_Subsistemas_\d{8}(_[PR])?\.xlsx$"), False),
+]
+
+#: Anexos que el Coordinador agrega a veces al ZIP y que no tienen que ver con el CMg:
+#: se reconocen y no se reportan (vistos en 1.774 ZIP, 2026-10-15). Un archivo que no
+#: calza con nada de esto, ni con MIEMBROS_ZIP, sigue reportandose como nuevo.
+ANEXOS_CONOCIDOS: list[re.Pattern[str]] = [
+    re.compile(r"^DesignacionCentrales_SD\d+_\d{8}\.xlsx$"),
+    re.compile(r"^Profundidad Costo de Falla.*\.xlsx$"),
+    re.compile(r"^C.lculo CF Racionamiento.*\.xlsx$"),  # "Cálculo": la tilde va y viene
+    re.compile(r"^ValorDolar_\d{4}\.xlsx$"),
+    re.compile(r"^R_CMg_\w+_MOD_\w+\.xlsx$"),
 ]
 
 #: Igual en `pre` y en `def`.
@@ -468,6 +492,8 @@ def revisar_miembros(nombres: list[str]) -> list[Hallazgo]:
         logico = next(
             (n for n, patron, _ in MIEMBROS_ZIP if patron.match(_sin_carpeta(nombre))), None
         )
+        if logico is None and any(p.match(_sin_carpeta(nombre)) for p in ANEXOS_CONOCIDOS):
+            continue
         if logico is None:
             hallazgos.append(
                 _h(
@@ -484,16 +510,18 @@ def revisar_miembros(nombres: list[str]) -> list[Hallazgo]:
     for logico, patron, obligatorio in MIEMBROS_ZIP:
         if logico in encontrados:
             continue
+        # un archivo opcional que falta es informativo: no se usa para el CMg, y si
+        # cambio de nombre aparece ademas como "archivo_nuevo_en_zip"
         hallazgos.append(
             _h(
-                "critico" if obligatorio else "aviso",
+                "critico" if obligatorio else "info",
                 "falta_archivo_requerido" if obligatorio else "falta_archivo_opcional",
                 f"El ZIP no trae el archivo '{logico}'.",
                 patron.pattern,
                 "Si cambio de nombre, actualizar MIEMBROS_ZIP. Si desaparecio, la "
                 "ingesta no puede leer este ZIP."
                 if obligatorio
-                else "No afecta la ingesta del CMg. Anotarlo.",
+                else "Nada: no se usa para el CMg.",
             )
         )
     return hallazgos
@@ -659,10 +687,11 @@ def revisar_forma_dia(dia: date, filas: Iterable[tuple[str, int, str]]) -> list[
                 _h(
                     "info",
                     "hora_fantasma_ausente",
-                    f"El {dia} ya NO trae la hora inexistente: el CEN cambio su "
-                    "comportamiento (para bien).",
+                    f"El {dia} tiene 23 horas y el archivo no trae la hora que no existio. "
+                    "El Coordinador a veces la publica en 0 y a veces no (2024-09-08 y "
+                    "2025-09-07 no; 2026-09-06 si).",
                     f"{n_barras} barras con {cuartos_tipicos} cuartos",
-                    "Nada: la ingesta funciona igual. Actualizar CLAUDE.md 4.5.4.",
+                    "Nada: la ingesta funciona igual en los dos casos.",
                 )
             )
         else:
